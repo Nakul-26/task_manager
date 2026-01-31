@@ -19,6 +19,7 @@ class Habit {
   late Frequency frequency;
   late List<int>? daysOfWeek; // 1 for Monday, 7 for Sunday
   late int? timesPerWeek;
+  late int? timesPerDay;
   late Color color;
   late DateTime createdAt;
 
@@ -31,6 +32,7 @@ class Habit {
     this.frequency = Frequency.daily,
     this.daysOfWeek,
     this.timesPerWeek,
+    this.timesPerDay,
     this.color = Colors.blue,
     required this.createdAt,
   });
@@ -45,6 +47,7 @@ class Habit {
       'frequency': frequency.index,
       'daysOfWeek': daysOfWeek,
       'timesPerWeek': timesPerWeek,
+      'timesPerDay': timesPerDay,
       'color': color.value,
       'createdAt': createdAt.toIso8601String(),
     };
@@ -60,6 +63,7 @@ class Habit {
       frequency: Frequency.values[map['frequency'] ?? 0],
       daysOfWeek: map['daysOfWeek'] != null ? List<int>.from(map['daysOfWeek']) : null,
       timesPerWeek: map['timesPerWeek'],
+      timesPerDay: map['timesPerDay'],
       color: Color(map['color'] ?? Colors.blue.value),
       createdAt: DateTime.parse(map['createdAt']),
     );

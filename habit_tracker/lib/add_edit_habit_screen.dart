@@ -19,6 +19,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
   late String _description;
   HabitType _type = HabitType.binary;
   Frequency _frequency = Frequency.daily;
+  int? _timesPerDay;
   Color _color = Colors.blue;
   bool _isImportant = false;
 
@@ -30,6 +31,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
       _description = widget.habit!.description;
       _type = widget.habit!.type;
       _frequency = widget.habit!.frequency;
+      _timesPerDay = widget.habit!.timesPerDay;
       _color = widget.habit!.color;
       _isImportant = widget.habit!.isImportant;
     } else {
@@ -49,6 +51,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
         isImportant: _isImportant,
         type: _type,
         frequency: _frequency,
+        timesPerDay: _timesPerDay,
         color: _color,
         createdAt: widget.habit?.createdAt ?? DateTime.now(),
       );
@@ -138,7 +141,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                 },
               ),
               DropdownButtonFormField<HabitType>(
-                initialValue: _type,
+                value: _type,
                 decoration: const InputDecoration(labelText: 'Type'),
                 items: HabitType.values.map((type) {
                   return DropdownMenuItem(
@@ -152,8 +155,21 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                   });
                 },
               ),
+              if (_type == HabitType.counted)
+                TextFormField(
+                  initialValue: _timesPerDay?.toString(),
+                  decoration: const InputDecoration(labelText: 'Times per Day'),
+                  keyboardType: TextInputType.number,
+                  validator: (value) {
+                    if (value != null && value.isNotEmpty && int.tryParse(value) == null) {
+                      return 'Please enter a valid number';
+                    }
+                    return null;
+                  },
+                  onSaved: (value) => _timesPerDay = value != null && value.isNotEmpty ? int.parse(value) : null,
+                ),
               DropdownButtonFormField<Frequency>(
-                initialValue: _frequency,
+                value: _frequency,
                 decoration: const InputDecoration(labelText: 'Frequency'),
                 items: Frequency.values.map((frequency) {
                   return DropdownMenuItem(

@@ -15,7 +15,7 @@ class _TodayScreenState extends State<TodayScreen> {
   late Box _habitBox;
   late Box _dailyLogBox;
   List<Habit> _habits = [];
-  Map<String, bool> _dailyCompletionStatus = {};
+  Map<String, DailyLog> _dailyCompletionStatus = {};
 
   @override
   void initState() {
@@ -46,8 +46,12 @@ class _TodayScreenState extends State<TodayScreen> {
     // Load completion status for today
     _dailyCompletionStatus = {};
     for (var habit in _habits) {
-      var log = _dailyLogBox.get('${habit.id}_$today');
-      _dailyCompletionStatus[habit.id] = log != null ? log['completed'] as bool : false;
+      var logMap = _dailyLogBox.get('${habit.id}_$today');
+      if (logMap != null) {
+        _dailyCompletionStatus[habit.id] = DailyLog.fromMap(Map<String, dynamic>.from(logMap));
+      } else {
+        _dailyCompletionStatus[habit.id] = DailyLog(date: today, habitId: habit.id);
+      }
     }
   }
 
@@ -61,14 +65,37 @@ class _TodayScreenState extends State<TodayScreen> {
 
   Future<void> _toggleHabitCompletion(Habit habit, bool? newValue) async {
     String today = _formatDate(DateTime.now());
-    DailyLog log = DailyLog(
-      date: today,
-      habitId: habit.id,
-      completed: newValue ?? false,
-    );
+    DailyLog log = _dailyCompletionStatus[habit.id] ?? DailyLog(date: today, habitId: habit.id);
+    log.completed = newValue ?? false;
     await _dailyLogBox.put('${habit.id}_$today', log.toMap());
     setState(() {
-      _dailyCompletionStatus[habit.id] = newValue ?? false;
+      _dailyCompletionStatus[habit.id] = log;
+    });
+  }
+
+  Future<void> _incrementHabitCount(Habit habit) async {
+    String today = _formatDate(DateTime.now());
+    DailyLog log = _dailyCompletionStatus[habit.id] ?? DailyLog(date: today, habitId: habit.id);
+    log.count = (log.count ?? 0) + 1;
+    if (habit.timesPerDay != null && log.count! >= habit.timesPerDay!) {
+      log.completed = true;
+    }
+    await _dailyLogBox.put('${habit.id}_$today', log.toMap());
+    setState(() {
+      _dailyCompletionStatus[habit.id] = log;
+    });
+  }
+
+  Future<void> _decrementHabitCount(Habit habit) async {
+    String today = _formatDate(DateTime.now());
+    DailyLog log = _dailyCompletionStatus[habit.id] ?? DailyLog(date: today, habitId: habit.id);
+    log.count = (log.count ?? 0) > 0 ? (log.count! - 1) : 0;
+    if (habit.timesPerDay != null && log.count! < habit.timesPerDay!) {
+      log.completed = false;
+    }
+    await _dailyLogBox.put('${habit.id}_$today', log.toMap());
+    setState(() {
+      _dailyCompletionStatus[habit.id] = log;
     });
   }
 
@@ -81,10 +108,15 @@ class _TodayScreenState extends State<TodayScreen> {
     DateTime date = DateTime.now();
     while (true) {
       final dateString = _formatDate(date);
-      final log = _dailyLogBox.get('${habit.id}_$dateString');
-      if (log != null && log['completed'] as bool) {
-        streak++;
-        date = date.subtract(const Duration(days: 1));
+      final logMap = _dailyLogBox.get('${habit.id}_$dateString');
+      if (logMap != null) {
+        final log = DailyLog.fromMap(Map<String, dynamic>.from(logMap));
+        if (log.completed) {
+          streak++;
+          date = date.subtract(const Duration(days: 1));
+        } else {
+          break;
+        }
       } else {
         break;
       }
@@ -115,7 +147,7 @@ class _TodayScreenState extends State<TodayScreen> {
         itemCount: _habits.length,
         itemBuilder: (context, index) {
           final habit = _habits[index];
-          bool isCompleted = _dailyCompletionStatus[habit.id] ?? false;
+          final log = _dailyCompletionStatus[habit.id]!;
           return GestureDetector(
             onTap: () {
               Navigator.of(context).push(
@@ -167,12 +199,27 @@ class _TodayScreenState extends State<TodayScreen> {
                         ],
                       ),
                     ),
-                    Checkbox(
-                      value: isCompleted,
-                      onChanged: (value) {
-                        _toggleHabitCompletion(habit, value);
-                      },
-                    ),
+                    if (habit.type == HabitType.binary)
+                      Checkbox(
+                        value: log.completed,
+                        onChanged: (value) {
+                          _toggleHabitCompletion(habit, value);
+                        },
+                      ),
+                    if (habit.type == HabitType.counted)
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.remove),
+                            onPressed: () => _decrementHabitCount(habit),
+                          ),
+                          Text('${log.count ?? 0} / ${habit.timesPerDay ?? ''}'),
+                          IconButton(
+                            icon: const Icon(Icons.add),
+                            onPressed: () => _incrementHabitCount(habit),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
               ),
@@ -183,4 +230,3 @@ class _TodayScreenState extends State<TodayScreen> {
     );
   }
 }
-
