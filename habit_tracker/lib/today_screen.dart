@@ -33,7 +33,20 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   Future<void> _loadHabits() async {
-    _habits = _habitBox.values.map((e) => Habit.fromMap(Map<String, dynamic>.from(e))).toList();
+    final allHabits = _habitBox.values.map((e) => Habit.fromMap(Map<String, dynamic>.from(e))).toList();
+    final today = DateTime.now();
+    final dayOfWeek = today.weekday; // Monday = 1, Sunday = 7
+
+    _habits = allHabits.where((habit) {
+      if (habit.frequency == Frequency.daily) {
+        return true;
+      }
+      if (habit.frequency == Frequency.weekly) {
+        return habit.daysOfWeek?.contains(dayOfWeek) ?? false;
+      }
+      return false;
+    }).toList();
+
     _checkDailyReset();
     if (mounted) {
       setState(() {});

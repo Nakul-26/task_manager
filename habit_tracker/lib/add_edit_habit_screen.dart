@@ -20,6 +20,8 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
   HabitType _type = HabitType.binary;
   Frequency _frequency = Frequency.daily;
   int? _timesPerDay;
+  int? _timesPerWeek;
+  List<int> _daysOfWeek = [];
   Color _color = Colors.blue;
   bool _isImportant = false;
 
@@ -32,6 +34,8 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
       _type = widget.habit!.type;
       _frequency = widget.habit!.frequency;
       _timesPerDay = widget.habit!.timesPerDay;
+      _timesPerWeek = widget.habit!.timesPerWeek;
+      _daysOfWeek = widget.habit!.daysOfWeek ?? [];
       _color = widget.habit!.color;
       _isImportant = widget.habit!.isImportant;
     } else {
@@ -52,6 +56,8 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
         type: _type,
         frequency: _frequency,
         timesPerDay: _timesPerDay,
+        timesPerWeek: _timesPerWeek,
+        daysOfWeek: _daysOfWeek,
         color: _color,
         createdAt: widget.habit?.createdAt ?? DateTime.now(),
       );
@@ -141,7 +147,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                 },
               ),
               DropdownButtonFormField<HabitType>(
-                value: _type,
+                initialValue: _type,
                 decoration: const InputDecoration(labelText: 'Type'),
                 items: HabitType.values.map((type) {
                   return DropdownMenuItem(
@@ -169,7 +175,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                   onSaved: (value) => _timesPerDay = value != null && value.isNotEmpty ? int.parse(value) : null,
                 ),
               DropdownButtonFormField<Frequency>(
-                value: _frequency,
+                initialValue: _frequency,
                 decoration: const InputDecoration(labelText: 'Frequency'),
                 items: Frequency.values.map((frequency) {
                   return DropdownMenuItem(
@@ -183,6 +189,45 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                   });
                 },
               ),
+              if (_frequency == Frequency.weekly) ...[
+                const SizedBox(height: 16),
+                const Text('Days of the Week'),
+                Wrap(
+                  spacing: 8.0,
+                  children: List<Widget>.generate(7, (int index) {
+                    return FilterChip(
+                      label: Text(['M', 'T', 'W', 'T', 'F', 'S', 'S'][index]),
+                      selected: _daysOfWeek.contains(index + 1),
+                      onSelected: (bool selected) {
+                        setState(() {
+                          if (selected) {
+                            _daysOfWeek.add(index + 1);
+                          } else {
+                            _daysOfWeek.remove(index + 1);
+                          }
+                        });
+                      },
+                    );
+                  }).toList(),
+                ),
+                TextFormField(
+                  initialValue: _timesPerWeek?.toString(),
+                  decoration: const InputDecoration(labelText: 'Times per Week'),
+                  keyboardType: TextInputType.number,
+                  validator: (value) {
+                    if (value != null &&
+                        value.isNotEmpty &&
+                        int.tryParse(value) == null) {
+                      return 'Please enter a valid number';
+                    }
+                    return null;
+                  },
+                  onSaved: (value) => _timesPerWeek =
+                      value != null && value.isNotEmpty
+                          ? int.parse(value)
+                          : null,
+                ),
+              ],
               const SizedBox(height: 16),
               GestureDetector(
                 onTap: _openColorPicker,
