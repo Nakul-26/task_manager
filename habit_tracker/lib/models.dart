@@ -48,7 +48,7 @@ class Habit {
       'daysOfWeek': daysOfWeek,
       'timesPerWeek': timesPerWeek,
       'timesPerDay': timesPerDay,
-      'color': color.value,
+      'color': color.toARGB32(),
       'createdAt': createdAt.toIso8601String(),
     };
   }
@@ -64,7 +64,7 @@ class Habit {
       daysOfWeek: map['daysOfWeek'] != null ? List<int>.from(map['daysOfWeek']) : null,
       timesPerWeek: map['timesPerWeek'],
       timesPerDay: map['timesPerDay'],
-      color: Color(map['color'] ?? Colors.blue.value),
+      color: Color(map['color'] ?? Colors.blue.toARGB32()),
       createdAt: DateTime.parse(map['createdAt']),
     );
   }

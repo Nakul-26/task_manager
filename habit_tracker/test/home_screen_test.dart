@@ -7,13 +7,14 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:io';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-  
+  final binding = TestWidgetsFlutterBinding.ensureInitialized();
+
   setUpAll(() async {
     final tempDir = await Directory.systemTemp.createTemp();
-    
-    const MethodChannel('plugins.flutter.io/path_provider')
-        .setMockMethodCallHandler((MethodCall methodCall) async {
+
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (MethodCall methodCall) async {
       if (methodCall.method == 'getApplicationDocumentsDirectory') {
         return tempDir.path;
       }
