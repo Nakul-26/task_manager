@@ -25,7 +25,9 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
   }
 
   void _loadLogs() {
-    final logs = _dailyLogBox.values.where((log) => log.habitId == widget.habit.id).cast<DailyLog>();
+    final logs = _dailyLogBox.values
+        .map((e) => DailyLog.fromMap(Map<String, dynamic>.from(e as Map)))
+        .where((log) => log.habitId == widget.habit.id);
     _events = {};
     int completedDays = 0;
     for (final log in logs) {

@@ -20,7 +20,6 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
   HabitType _type = HabitType.binary;
   Frequency _frequency = Frequency.daily;
   int? _timesPerDay;
-  int? _timesPerWeek;
   List<int> _daysOfWeek = [];
   Color _color = Colors.blue;
   bool _isImportant = false;
@@ -34,7 +33,6 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
       _type = widget.habit!.type;
       _frequency = widget.habit!.frequency;
       _timesPerDay = widget.habit!.timesPerDay;
-      _timesPerWeek = widget.habit!.timesPerWeek;
       _daysOfWeek = widget.habit!.daysOfWeek ?? [];
       _color = widget.habit!.color;
       _isImportant = widget.habit!.isImportant;
@@ -56,7 +54,6 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
         type: _type,
         frequency: _frequency,
         timesPerDay: _timesPerDay,
-        timesPerWeek: _timesPerWeek,
         daysOfWeek: _daysOfWeek,
         color: _color,
         createdAt: widget.habit?.createdAt ?? DateTime.now(),
@@ -209,23 +206,6 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                       },
                     );
                   }).toList(),
-                ),
-                TextFormField(
-                  initialValue: _timesPerWeek?.toString(),
-                  decoration: const InputDecoration(labelText: 'Times per Week'),
-                  keyboardType: TextInputType.number,
-                  validator: (value) {
-                    if (value != null &&
-                        value.isNotEmpty &&
-                        int.tryParse(value) == null) {
-                      return 'Please enter a valid number';
-                    }
-                    return null;
-                  },
-                  onSaved: (value) => _timesPerWeek =
-                      value != null && value.isNotEmpty
-                          ? int.parse(value)
-                          : null,
                 ),
               ],
               const SizedBox(height: 16),
