@@ -1,3 +1,6 @@
+# task_manager
+An Android applications to help manage daily tasks
+
 ## Project: Habit Tracker MVP
 
 Build a **very simple, offline-first habit and task tracking app** using Flutter.  
