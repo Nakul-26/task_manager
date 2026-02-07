@@ -21,6 +21,7 @@ class Habit {
   late int? timesPerDay;
   late Color color;
   late DateTime createdAt;
+  late int sortOrder;
 
   Habit({
     required this.id,
@@ -33,6 +34,7 @@ class Habit {
     this.timesPerDay,
     this.color = Colors.blue,
     required this.createdAt,
+    this.sortOrder = -1,
   });
 
   Map<String, dynamic> toMap() {
@@ -47,6 +49,7 @@ class Habit {
       'timesPerDay': timesPerDay,
       'color': color.toARGB32(),
       'createdAt': createdAt.toIso8601String(),
+      'sortOrder': sortOrder,
     };
   }
 
@@ -62,6 +65,7 @@ class Habit {
       timesPerDay: map['timesPerDay'],
       color: Color(map['color'] ?? Colors.blue.toARGB32()),
       createdAt: DateTime.parse(map['createdAt']),
+      sortOrder: map['sortOrder'] ?? -1,
     );
   }
 }

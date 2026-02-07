@@ -46,6 +46,20 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
     if (_formKey.currentState!.validate()) {
       _formKey.currentState!.save();
       final habitBox = Hive.box('habits');
+      int sortOrder = widget.habit?.sortOrder ?? -1;
+      if (widget.habit == null) {
+        final existingHabits = habitBox.values
+            .map((e) => Habit.fromMap(Map<String, dynamic>.from(e)))
+            .toList();
+        if (existingHabits.isEmpty) {
+          sortOrder = 0;
+        } else {
+          final maxOrder = existingHabits
+              .map((habit) => habit.sortOrder)
+              .reduce((a, b) => a > b ? a : b);
+          sortOrder = maxOrder + 1;
+        }
+      }
       final newHabit = Habit(
         id: widget.habit?.id ?? const Uuid().v4(),
         name: _name,
@@ -57,6 +71,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
         daysOfWeek: _daysOfWeek,
         color: _color,
         createdAt: widget.habit?.createdAt ?? DateTime.now(),
+        sortOrder: sortOrder,
       );
       habitBox.put(newHabit.id, newHabit.toMap());
       Navigator.of(context).pop();

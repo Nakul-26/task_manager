@@ -30,12 +30,48 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
 
   void _loadHabits() {
     if (mounted) {
+      final habits = _habitBox.values
+          .map((e) => Habit.fromMap(Map<String, dynamic>.from(e)))
+          .toList();
+      _ensureSortOrder(habits);
+      habits.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
       setState(() {
-        _habits = _habitBox.values
-            .map((e) => Habit.fromMap(Map<String, dynamic>.from(e)))
-            .toList();
+        _habits = habits;
       });
     }
+  }
+
+  void _ensureSortOrder(List<Habit> habits) {
+    bool needsSave = false;
+    for (int i = 0; i < habits.length; i++) {
+      if (habits[i].sortOrder < 0) {
+        habits[i].sortOrder = i;
+        needsSave = true;
+      }
+    }
+    if (needsSave) {
+      for (final habit in habits) {
+        _habitBox.put(habit.id, habit.toMap());
+      }
+    }
+  }
+
+  void _persistOrder() {
+    for (int i = 0; i < _habits.length; i++) {
+      _habits[i].sortOrder = i;
+      _habitBox.put(_habits[i].id, _habits[i].toMap());
+    }
+  }
+
+  void _onReorder(int oldIndex, int newIndex) {
+    setState(() {
+      if (newIndex > oldIndex) {
+        newIndex -= 1;
+      }
+      final habit = _habits.removeAt(oldIndex);
+      _habits.insert(newIndex, habit);
+      _persistOrder();
+    });
   }
 
   void _deleteHabit(Habit habit) {
@@ -67,11 +103,18 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
       appBar: AppBar(
         title: const Text('Manage Habits'),
       ),
-      body: ListView.builder(
+      body: ReorderableListView.builder(
+        buildDefaultDragHandles: false,
+        onReorder: _onReorder,
         itemCount: _habits.length,
         itemBuilder: (context, index) {
           final habit = _habits[index];
           return ListTile(
+            key: ValueKey(habit.id),
+            leading: ReorderableDragStartListener(
+              index: index,
+              child: const Icon(Icons.drag_handle),
+            ),
             title: Text(habit.name),
             subtitle: Text(habit.description),
             trailing: Row(

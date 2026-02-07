@@ -34,6 +34,7 @@ class _TodayScreenState extends State<TodayScreen> {
 
   Future<void> _loadHabits() async {
     final allHabits = _habitBox.values.map((e) => Habit.fromMap(Map<String, dynamic>.from(e))).toList();
+    _ensureSortOrder(allHabits);
     final today = DateTime.now();
     final dayOfWeek = today.weekday; // Monday = 1, Sunday = 7
 
@@ -45,11 +46,27 @@ class _TodayScreenState extends State<TodayScreen> {
         return habit.daysOfWeek?.contains(dayOfWeek) ?? false;
       }
       return false;
-    }).toList();
+    }).toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
     _checkDailyReset();
     if (mounted) {
       setState(() {});
+    }
+  }
+
+  void _ensureSortOrder(List<Habit> habits) {
+    bool needsSave = false;
+    for (int i = 0; i < habits.length; i++) {
+      if (habits[i].sortOrder < 0) {
+        habits[i].sortOrder = i;
+        needsSave = true;
+      }
+    }
+    if (needsSave) {
+      for (final habit in habits) {
+        _habitBox.put(habit.id, habit.toMap());
+      }
     }
   }
 
