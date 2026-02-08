@@ -37,6 +37,7 @@ class _TodayScreenState extends State<TodayScreen> {
     _ensureSortOrder(allHabits);
     final today = DateTime.now();
     final dayOfWeek = today.weekday; // Monday = 1, Sunday = 7
+    final dayOfMonth = today.day;
 
     _habits = allHabits.where((habit) {
       if (habit.frequency == Frequency.daily) {
@@ -44,6 +45,12 @@ class _TodayScreenState extends State<TodayScreen> {
       }
       if (habit.frequency == Frequency.weekly) {
         return habit.daysOfWeek?.contains(dayOfWeek) ?? false;
+      }
+      if (habit.frequency == Frequency.oddDays) {
+        return dayOfMonth.isOdd;
+      }
+      if (habit.frequency == Frequency.evenDays) {
+        return dayOfMonth.isEven;
       }
       return false;
     }).toList()

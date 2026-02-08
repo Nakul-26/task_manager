@@ -24,6 +24,19 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
   Color _color = Colors.blue;
   bool _isImportant = false;
 
+  String _frequencyLabel(Frequency frequency) {
+    switch (frequency) {
+      case Frequency.daily:
+        return 'Daily';
+      case Frequency.weekly:
+        return 'Weekly';
+      case Frequency.oddDays:
+        return 'Odd days';
+      case Frequency.evenDays:
+        return 'Even days';
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -192,7 +205,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                 items: Frequency.values.map((frequency) {
                   return DropdownMenuItem(
                     value: frequency,
-                    child: Text(frequency.toString().split('.').last),
+                    child: Text(_frequencyLabel(frequency)),
                   );
                 }).toList(),
                 onChanged: (value) {

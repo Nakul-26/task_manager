@@ -8,6 +8,8 @@ enum HabitType {
 enum Frequency {
   daily,
   weekly,
+  oddDays,
+  evenDays,
 }
 
 class Habit {
