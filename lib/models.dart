@@ -16,6 +16,7 @@ class Habit {
   late String id;
   late String name;
   late bool isImportant;
+  late bool isArchived;
   late String description;
   late HabitType type;
   late Frequency frequency;
@@ -23,12 +24,14 @@ class Habit {
   late int? timesPerDay;
   late Color color;
   late DateTime createdAt;
+  late DateTime? archivedAt;
   late int sortOrder;
 
   Habit({
     required this.id,
     required this.name,
     this.isImportant = false,
+    this.isArchived = false,
     required this.description,
     this.type = HabitType.binary,
     this.frequency = Frequency.daily,
@@ -36,6 +39,7 @@ class Habit {
     this.timesPerDay,
     this.color = Colors.blue,
     required this.createdAt,
+    this.archivedAt,
     this.sortOrder = -1,
   });
 
@@ -44,6 +48,7 @@ class Habit {
       'id': id,
       'name': name,
       'isImportant': isImportant,
+      'isArchived': isArchived,
       'description': description,
       'type': type.index,
       'frequency': frequency.index,
@@ -51,6 +56,7 @@ class Habit {
       'timesPerDay': timesPerDay,
       'color': color.toARGB32(),
       'createdAt': createdAt.toIso8601String(),
+      'archivedAt': archivedAt?.toIso8601String(),
       'sortOrder': sortOrder,
     };
   }
@@ -60,6 +66,7 @@ class Habit {
       id: map['id'],
       name: map['name'],
       isImportant: map['isImportant'] ?? false,
+      isArchived: map['isArchived'] ?? false,
       description: map['description'] ?? '',
       type: HabitType.values[map['type'] ?? 0],
       frequency: Frequency.values[map['frequency'] ?? 0],
@@ -67,6 +74,7 @@ class Habit {
       timesPerDay: map['timesPerDay'],
       color: Color(map['color'] ?? Colors.blue.toARGB32()),
       createdAt: DateTime.parse(map['createdAt']),
+      archivedAt: map['archivedAt'] != null ? DateTime.parse(map['archivedAt']) : null,
       sortOrder: map['sortOrder'] ?? -1,
     );
   }

@@ -12,7 +12,8 @@ class ManageHabitsScreen extends StatefulWidget {
 
 class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
   late Box<dynamic> _habitBox;
-  List<Habit> _habits = [];
+  List<Habit> _activeHabits = [];
+  List<Habit> _archivedHabits = [];
 
   @override
   void initState() {
@@ -33,10 +34,18 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
       final habits = _habitBox.values
           .map((e) => Habit.fromMap(Map<String, dynamic>.from(e)))
           .toList();
-      _ensureSortOrder(habits);
-      habits.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      final activeHabits = habits.where((habit) => !habit.isArchived).toList();
+      final archivedHabits = habits.where((habit) => habit.isArchived).toList();
+      _ensureSortOrder(activeHabits);
+      activeHabits.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      archivedHabits.sort((a, b) {
+        final aDate = a.archivedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bDate = b.archivedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return bDate.compareTo(aDate);
+      });
       setState(() {
-        _habits = habits;
+        _activeHabits = activeHabits;
+        _archivedHabits = archivedHabits;
       });
     }
   }
@@ -57,9 +66,9 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
   }
 
   void _persistOrder() {
-    for (int i = 0; i < _habits.length; i++) {
-      _habits[i].sortOrder = i;
-      _habitBox.put(_habits[i].id, _habits[i].toMap());
+    for (int i = 0; i < _activeHabits.length; i++) {
+      _activeHabits[i].sortOrder = i;
+      _habitBox.put(_activeHabits[i].id, _activeHabits[i].toMap());
     }
   }
 
@@ -68,10 +77,22 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
       if (newIndex > oldIndex) {
         newIndex -= 1;
       }
-      final habit = _habits.removeAt(oldIndex);
-      _habits.insert(newIndex, habit);
+      final habit = _activeHabits.removeAt(oldIndex);
+      _activeHabits.insert(newIndex, habit);
       _persistOrder();
     });
+  }
+
+  void _setArchiveStatus(Habit habit, bool isArchived) {
+    habit.isArchived = isArchived;
+    habit.archivedAt = isArchived ? DateTime.now() : null;
+    if (!isArchived) {
+      final maxOrder = _activeHabits.isEmpty
+          ? -1
+          : _activeHabits.map((h) => h.sortOrder).reduce((a, b) => a > b ? a : b);
+      habit.sortOrder = maxOrder + 1;
+    }
+    _habitBox.put(habit.id, habit.toMap());
   }
 
   void _deleteHabit(Habit habit) {
@@ -99,49 +120,118 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final hasAnyHabits = _activeHabits.isNotEmpty || _archivedHabits.isNotEmpty;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Manage Habits'),
       ),
-      body: ReorderableListView.builder(
-        buildDefaultDragHandles: false,
-        onReorder: _onReorder,
-        itemCount: _habits.length,
-        itemBuilder: (context, index) {
-          final habit = _habits[index];
-          return ListTile(
-            key: ValueKey(habit.id),
-            leading: ReorderableDragStartListener(
-              index: index,
-              child: const Icon(Icons.drag_handle),
-            ),
-            title: Text(habit.name),
-            subtitle: Text(habit.description),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
+      body: !hasAnyHabits
+          ? const Center(child: Text('No habits yet.'))
+          : Column(
               children: [
-                IconButton(
-                  icon: const Icon(Icons.edit),
-                  onPressed: () {
-                    Navigator.of(context)
-                        .push(
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                AddEditHabitScreen(habit: habit),
+                Expanded(
+                  child: _activeHabits.isEmpty
+                      ? const Center(child: Text('No active habits.'))
+                      : ReorderableListView.builder(
+                          buildDefaultDragHandles: false,
+                          onReorder: _onReorder,
+                          itemCount: _activeHabits.length,
+                          itemBuilder: (context, index) {
+                            final habit = _activeHabits[index];
+                            return ListTile(
+                              key: ValueKey(habit.id),
+                              leading: ReorderableDragStartListener(
+                                index: index,
+                                child: const Icon(Icons.drag_handle),
+                              ),
+                              title: Text(habit.name),
+                              subtitle: Text(habit.description),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.archive_outlined),
+                                    tooltip: 'Archive',
+                                    onPressed: () => _setArchiveStatus(habit, true),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.edit),
+                                    onPressed: () {
+                                      Navigator.of(context)
+                                          .push(
+                                            MaterialPageRoute(
+                                              builder: (context) =>
+                                                  AddEditHabitScreen(habit: habit),
+                                            ),
+                                          )
+                                          .then((_) => _loadHabits());
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete),
+                                    onPressed: () => _deleteHabit(habit),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
+                if (_archivedHabits.isNotEmpty) ...[
+                  const Divider(height: 1),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Archived',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: _archivedHabits.length,
+                      itemBuilder: (context, index) {
+                        final habit = _archivedHabits[index];
+                        return ListTile(
+                          leading: const Icon(Icons.archive),
+                          title: Text(habit.name),
+                          subtitle: Text(habit.description),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.unarchive_outlined),
+                                tooltip: 'Unarchive',
+                                onPressed: () => _setArchiveStatus(habit, false),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.edit),
+                                onPressed: () {
+                                  Navigator.of(context)
+                                      .push(
+                                        MaterialPageRoute(
+                                          builder: (context) =>
+                                              AddEditHabitScreen(habit: habit),
+                                        ),
+                                      )
+                                      .then((_) => _loadHabits());
+                                },
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete),
+                                onPressed: () => _deleteHabit(habit),
+                              ),
+                            ],
                           ),
-                        )
-                        .then((_) => _loadHabits());
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete),
-                  onPressed: () => _deleteHabit(habit),
-                ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ],
             ),
-          );
-        },
-      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           Navigator.of(context)

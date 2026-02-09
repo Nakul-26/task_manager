@@ -84,5 +84,21 @@ void main() {
     checkbox = tester.widget(find.byType(Checkbox));
     expect(checkbox.value, true);
   });
-}
 
+  testWidgets('Archived habits are hidden from today list', (WidgetTester tester) async {
+    final archivedHabit = Habit(
+      id: '2',
+      name: 'Archived Habit',
+      description: 'Should not show in today list',
+      isArchived: true,
+      createdAt: DateTime.now(),
+      archivedAt: DateTime.now(),
+    );
+    await Hive.box('habits').put(archivedHabit.id, archivedHabit.toMap());
+
+    await tester.pumpWidget(const MyApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text('Archived Habit'), findsNothing);
+  });
+}

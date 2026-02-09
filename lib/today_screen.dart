@@ -33,7 +33,10 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   Future<void> _loadHabits() async {
-    final allHabits = _habitBox.values.map((e) => Habit.fromMap(Map<String, dynamic>.from(e))).toList();
+    final allHabits = _habitBox.values
+        .map((e) => Habit.fromMap(Map<String, dynamic>.from(e)))
+        .where((habit) => !habit.isArchived)
+        .toList();
     _ensureSortOrder(allHabits);
     final today = DateTime.now();
     final dayOfWeek = today.weekday; // Monday = 1, Sunday = 7

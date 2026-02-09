@@ -78,12 +78,14 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
         name: _name,
         description: _description,
         isImportant: _isImportant,
+        isArchived: widget.habit?.isArchived ?? false,
         type: _type,
         frequency: _frequency,
         timesPerDay: _timesPerDay,
         daysOfWeek: _daysOfWeek,
         color: _color,
         createdAt: widget.habit?.createdAt ?? DateTime.now(),
+        archivedAt: widget.habit?.archivedAt,
         sortOrder: sortOrder,
       );
       habitBox.put(newHabit.id, newHabit.toMap());

@@ -8,8 +8,10 @@ void main() {
       id: '1',
       name: 'Read',
       isImportant: true,
+      isArchived: true,
       description: 'Read a book for 30 minutes',
       createdAt: DateTime(2026, 1, 1),
+      archivedAt: DateTime(2026, 2, 1),
     );
 
     final map = habit.toMap();
@@ -18,7 +20,9 @@ void main() {
     expect(newHabit.id, '1');
     expect(newHabit.name, 'Read');
     expect(newHabit.isImportant, true);
+    expect(newHabit.isArchived, true);
     expect(newHabit.description, 'Read a book for 30 minutes');
     expect(newHabit.createdAt, DateTime(2026, 1, 1));
+    expect(newHabit.archivedAt, DateTime(2026, 2, 1));
   });
 }
