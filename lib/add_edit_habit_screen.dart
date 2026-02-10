@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:habit_tracker/models.dart';
+import 'package:habit_tracker/reminder_service.dart';
 import 'package:uuid/uuid.dart';
 import 'package:hive/hive.dart';
 
@@ -23,6 +24,8 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
   List<int> _daysOfWeek = [];
   Color _color = Colors.blue;
   bool _isImportant = false;
+  bool _reminderEnabled = false;
+  TimeOfDay? _reminderTime;
 
   String _frequencyLabel(Frequency frequency) {
     switch (frequency) {
@@ -49,14 +52,39 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
       _daysOfWeek = widget.habit!.daysOfWeek ?? [];
       _color = widget.habit!.color;
       _isImportant = widget.habit!.isImportant;
+      _reminderEnabled = widget.habit!.reminderEnabled;
+      if (widget.habit!.reminderHour != null &&
+          widget.habit!.reminderMinute != null) {
+        _reminderTime = TimeOfDay(
+          hour: widget.habit!.reminderHour!,
+          minute: widget.habit!.reminderMinute!,
+        );
+      }
     } else {
       _name = '';
       _description = '';
     }
   }
 
-  void _saveHabit() {
+  Future<void> _saveHabit() async {
     if (_formKey.currentState!.validate()) {
+      if (_frequency == Frequency.weekly && _daysOfWeek.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Please select at least one day for weekly frequency.',
+            ),
+          ),
+        );
+        return;
+      }
+      if (_reminderEnabled && _reminderTime == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please choose a reminder time.')),
+        );
+        return;
+      }
+
       _formKey.currentState!.save();
       final habitBox = Hive.box('habits');
       int sortOrder = widget.habit?.sortOrder ?? -1;
@@ -83,20 +111,43 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
         frequency: _frequency,
         timesPerDay: _timesPerDay,
         daysOfWeek: _daysOfWeek,
+        reminderEnabled: _reminderEnabled,
+        reminderHour: _reminderTime?.hour,
+        reminderMinute: _reminderTime?.minute,
         color: _color,
         createdAt: widget.habit?.createdAt ?? DateTime.now(),
         archivedAt: widget.habit?.archivedAt,
         sortOrder: sortOrder,
       );
       habitBox.put(newHabit.id, newHabit.toMap());
+      await ReminderService.instance.syncHabitReminder(newHabit);
+      if (!mounted) {
+        return;
+      }
       Navigator.of(context).pop();
     }
   }
 
-  void _deleteHabit() {
+  Future<void> _deleteHabit() async {
     final habitBox = Hive.box('habits');
-    habitBox.delete(widget.habit!.id);
+    await habitBox.delete(widget.habit!.id);
+    await ReminderService.instance.cancelHabitReminders(widget.habit!.id);
+    if (!mounted) {
+      return;
+    }
     Navigator.of(context).pop();
+  }
+
+  Future<void> _pickReminderTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _reminderTime ?? TimeOfDay.now(),
+    );
+    if (picked != null) {
+      setState(() {
+        _reminderTime = picked;
+      });
+    }
   }
 
   void _openColorPicker() {
@@ -136,10 +187,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
         title: Text(widget.habit == null ? 'Add Habit' : 'Edit Habit'),
         actions: [
           if (widget.habit != null)
-            IconButton(
-              icon: const Icon(Icons.delete),
-              onPressed: _deleteHabit,
-            ),
+            IconButton(icon: const Icon(Icons.delete), onPressed: _deleteHabit),
         ],
       ),
       body: Padding(
@@ -194,12 +242,17 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                   decoration: const InputDecoration(labelText: 'Times per Day'),
                   keyboardType: TextInputType.number,
                   validator: (value) {
-                    if (value != null && value.isNotEmpty && int.tryParse(value) == null) {
+                    if (value != null &&
+                        value.isNotEmpty &&
+                        int.tryParse(value) == null) {
                       return 'Please enter a valid number';
                     }
                     return null;
                   },
-                  onSaved: (value) => _timesPerDay = value != null && value.isNotEmpty ? int.parse(value) : null,
+                  onSaved: (value) =>
+                      _timesPerDay = value != null && value.isNotEmpty
+                      ? int.parse(value)
+                      : null,
                 ),
               DropdownButtonFormField<Frequency>(
                 initialValue: _frequency,
@@ -239,6 +292,31 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                 ),
               ],
               const SizedBox(height: 16),
+              SwitchListTile(
+                title: const Text('Reminder'),
+                subtitle: Text(
+                  _reminderEnabled
+                      ? (_reminderTime == null
+                            ? 'Select reminder time'
+                            : 'At ${_reminderTime!.format(context)}')
+                      : 'Off',
+                ),
+                value: _reminderEnabled,
+                onChanged: (value) {
+                  setState(() {
+                    _reminderEnabled = value;
+                  });
+                },
+              ),
+              if (_reminderEnabled)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Reminder time'),
+                  subtitle: Text(_reminderTime?.format(context) ?? 'Not set'),
+                  trailing: const Icon(Icons.schedule),
+                  onTap: _pickReminderTime,
+                ),
+              const SizedBox(height: 16),
               GestureDetector(
                 onTap: _openColorPicker,
                 child: Container(
@@ -256,10 +334,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                 ),
               ),
               const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _saveHabit,
-                child: const Text('Save'),
-              ),
+              ElevatedButton(onPressed: _saveHabit, child: const Text('Save')),
             ],
           ),
         ),

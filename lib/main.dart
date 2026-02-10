@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:habit_tracker/reminder_service.dart';
 import 'package:habit_tracker/today_screen.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
@@ -10,6 +11,8 @@ void main() async {
 
   await Hive.openBox('habits');
   await Hive.openBox('dailyLogs');
+  await ReminderService.instance.initialize();
+  await ReminderService.instance.syncAllHabitReminders(Hive.box('habits'));
 
   runApp(const MyApp());
 }
@@ -29,4 +32,3 @@ class MyApp extends StatelessWidget {
     );
   }
 }
-

@@ -1,16 +1,8 @@
 import 'package:flutter/material.dart';
 
-enum HabitType {
-  binary,
-  counted,
-}
+enum HabitType { binary, counted }
 
-enum Frequency {
-  daily,
-  weekly,
-  oddDays,
-  evenDays,
-}
+enum Frequency { daily, weekly, oddDays, evenDays }
 
 class Habit {
   late String id;
@@ -22,6 +14,9 @@ class Habit {
   late Frequency frequency;
   late List<int>? daysOfWeek; // 1 for Monday, 7 for Sunday
   late int? timesPerDay;
+  late bool reminderEnabled;
+  late int? reminderHour;
+  late int? reminderMinute;
   late Color color;
   late DateTime createdAt;
   late DateTime? archivedAt;
@@ -37,6 +32,9 @@ class Habit {
     this.frequency = Frequency.daily,
     this.daysOfWeek,
     this.timesPerDay,
+    this.reminderEnabled = false,
+    this.reminderHour,
+    this.reminderMinute,
     this.color = Colors.blue,
     required this.createdAt,
     this.archivedAt,
@@ -54,6 +52,9 @@ class Habit {
       'frequency': frequency.index,
       'daysOfWeek': daysOfWeek,
       'timesPerDay': timesPerDay,
+      'reminderEnabled': reminderEnabled,
+      'reminderHour': reminderHour,
+      'reminderMinute': reminderMinute,
       'color': color.toARGB32(),
       'createdAt': createdAt.toIso8601String(),
       'archivedAt': archivedAt?.toIso8601String(),
@@ -70,11 +71,18 @@ class Habit {
       description: map['description'] ?? '',
       type: HabitType.values[map['type'] ?? 0],
       frequency: Frequency.values[map['frequency'] ?? 0],
-      daysOfWeek: map['daysOfWeek'] != null ? List<int>.from(map['daysOfWeek']) : null,
+      daysOfWeek: map['daysOfWeek'] != null
+          ? List<int>.from(map['daysOfWeek'])
+          : null,
       timesPerDay: map['timesPerDay'],
+      reminderEnabled: map['reminderEnabled'] ?? false,
+      reminderHour: map['reminderHour'],
+      reminderMinute: map['reminderMinute'],
       color: Color(map['color'] ?? Colors.blue.toARGB32()),
       createdAt: DateTime.parse(map['createdAt']),
-      archivedAt: map['archivedAt'] != null ? DateTime.parse(map['archivedAt']) : null,
+      archivedAt: map['archivedAt'] != null
+          ? DateTime.parse(map['archivedAt'])
+          : null,
       sortOrder: map['sortOrder'] ?? -1,
     );
   }
