@@ -17,6 +17,7 @@ class Habit {
   late bool reminderEnabled;
   late int? reminderHour;
   late int? reminderMinute;
+  late int? timerMinutes;
   late Color color;
   late DateTime createdAt;
   late DateTime? archivedAt;
@@ -35,6 +36,7 @@ class Habit {
     this.reminderEnabled = false,
     this.reminderHour,
     this.reminderMinute,
+    this.timerMinutes,
     this.color = Colors.blue,
     required this.createdAt,
     this.archivedAt,
@@ -55,6 +57,7 @@ class Habit {
       'reminderEnabled': reminderEnabled,
       'reminderHour': reminderHour,
       'reminderMinute': reminderMinute,
+      'timerMinutes': timerMinutes,
       'color': color.toARGB32(),
       'createdAt': createdAt.toIso8601String(),
       'archivedAt': archivedAt?.toIso8601String(),
@@ -78,6 +81,7 @@ class Habit {
       reminderEnabled: map['reminderEnabled'] ?? false,
       reminderHour: map['reminderHour'],
       reminderMinute: map['reminderMinute'],
+      timerMinutes: map['timerMinutes'],
       color: Color(map['color'] ?? Colors.blue.toARGB32()),
       createdAt: DateTime.parse(map['createdAt']),
       archivedAt: map['archivedAt'] != null

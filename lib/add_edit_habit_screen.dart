@@ -21,6 +21,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
   HabitType _type = HabitType.binary;
   Frequency _frequency = Frequency.daily;
   int? _timesPerDay;
+  int? _timerMinutes;
   List<int> _daysOfWeek = [];
   Color _color = Colors.blue;
   bool _isImportant = false;
@@ -49,6 +50,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
       _type = widget.habit!.type;
       _frequency = widget.habit!.frequency;
       _timesPerDay = widget.habit!.timesPerDay;
+      _timerMinutes = widget.habit!.timerMinutes;
       _daysOfWeek = widget.habit!.daysOfWeek ?? [];
       _color = widget.habit!.color;
       _isImportant = widget.habit!.isImportant;
@@ -110,6 +112,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
         type: _type,
         frequency: _frequency,
         timesPerDay: _timesPerDay,
+        timerMinutes: _timerMinutes,
         daysOfWeek: _daysOfWeek,
         reminderEnabled: _reminderEnabled,
         reminderHour: _reminderTime?.hour,
@@ -316,6 +319,32 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                   trailing: const Icon(Icons.schedule),
                   onTap: _pickReminderTime,
                 ),
+              TextFormField(
+                initialValue: _timerMinutes?.toString() ?? '',
+                decoration: const InputDecoration(
+                  labelText: 'Timer (minutes, optional)',
+                  helperText:
+                      'Set once for this habit to reuse every day without re-entering.',
+                ),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return null;
+                  }
+                  final parsed = int.tryParse(value.trim());
+                  if (parsed == null || parsed <= 0) {
+                    return 'Please enter a number greater than 0';
+                  }
+                  return null;
+                },
+                onSaved: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    _timerMinutes = null;
+                    return;
+                  }
+                  _timerMinutes = int.tryParse(value.trim());
+                },
+              ),
               const SizedBox(height: 16),
               GestureDetector(
                 onTap: _openColorPicker,

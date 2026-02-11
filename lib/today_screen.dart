@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:habit_tracker/habit_details_screen.dart';
 import 'package:habit_tracker/manage_habits_screen.dart';
@@ -88,9 +90,11 @@ class _TodayScreenState extends State<TodayScreen> {
     for (var habit in _habits) {
       var logMap = _dailyLogBox.get('${habit.id}_$today');
       if (logMap != null) {
-        _dailyCompletionStatus[habit.id] = DailyLog.fromMap(Map<String, dynamic>.from(logMap));
+        _dailyCompletionStatus[habit.id] =
+            DailyLog.fromMap(Map<String, dynamic>.from(logMap));
       } else {
-        _dailyCompletionStatus[habit.id] = DailyLog(date: today, habitId: habit.id);
+        _dailyCompletionStatus[habit.id] =
+            DailyLog(date: today, habitId: habit.id);
       }
     }
   }
@@ -105,7 +109,8 @@ class _TodayScreenState extends State<TodayScreen> {
 
   Future<void> _toggleHabitCompletion(Habit habit, bool? newValue) async {
     String today = _formatDate(DateTime.now());
-    DailyLog log = _dailyCompletionStatus[habit.id] ?? DailyLog(date: today, habitId: habit.id);
+    DailyLog log =
+        _dailyCompletionStatus[habit.id] ?? DailyLog(date: today, habitId: habit.id);
     log.completed = newValue ?? false;
     await _dailyLogBox.put('${habit.id}_$today', log.toMap());
     setState(() {
@@ -115,7 +120,8 @@ class _TodayScreenState extends State<TodayScreen> {
 
   Future<void> _incrementHabitCount(Habit habit) async {
     String today = _formatDate(DateTime.now());
-    DailyLog log = _dailyCompletionStatus[habit.id] ?? DailyLog(date: today, habitId: habit.id);
+    DailyLog log =
+        _dailyCompletionStatus[habit.id] ?? DailyLog(date: today, habitId: habit.id);
     log.count = (log.count ?? 0) + 1;
     if (habit.timesPerDay != null && log.count! >= habit.timesPerDay!) {
       log.completed = true;
@@ -128,7 +134,8 @@ class _TodayScreenState extends State<TodayScreen> {
 
   Future<void> _decrementHabitCount(Habit habit) async {
     String today = _formatDate(DateTime.now());
-    DailyLog log = _dailyCompletionStatus[habit.id] ?? DailyLog(date: today, habitId: habit.id);
+    DailyLog log =
+        _dailyCompletionStatus[habit.id] ?? DailyLog(date: today, habitId: habit.id);
     log.count = (log.count ?? 0) > 0 ? (log.count! - 1) : 0;
     if (habit.timesPerDay != null && log.count! < habit.timesPerDay!) {
       log.completed = false;
@@ -139,8 +146,46 @@ class _TodayScreenState extends State<TodayScreen> {
     });
   }
 
+  Future<void> _startHabitTimer(Habit habit) async {
+    if ((habit.timerMinutes ?? 0) <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No timer set for this habit.')),
+      );
+      return;
+    }
+
+    final completed = await showDialog<bool>(
+      context: context,
+      builder: (_) => _HabitTimerDialog(
+        habitName: habit.name,
+        duration: Duration(minutes: habit.timerMinutes!),
+      ),
+    );
+
+    if (!mounted || completed != true) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${habit.name} timer completed.')),
+    );
+  }
+
   String _formatDate(DateTime date) {
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    return
+        '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  String _formatTimerLabel(int minutes) {
+    if (minutes < 60) {
+      return '$minutes min';
+    }
+    final hours = minutes ~/ 60;
+    final remainingMinutes = minutes % 60;
+    if (remainingMinutes == 0) {
+      return '$hours h';
+    }
+    return '$hours h $remainingMinutes m';
   }
 
   int _getStreak(Habit habit) {
@@ -223,8 +268,12 @@ class _TodayScreenState extends State<TodayScreen> {
                               ),
                               if (habit.isImportant) ...[
                                 const SizedBox(width: 8),
-                                const Icon(Icons.star, color: Colors.amber, size: 20),
-                              ]
+                                const Icon(
+                                  Icons.star,
+                                  color: Colors.amber,
+                                  size: 20,
+                                ),
+                              ],
                             ],
                           ),
                           Text(habit.description),
@@ -233,9 +282,26 @@ class _TodayScreenState extends State<TodayScreen> {
                             children: [
                               Text('Streak: ${_getStreak(habit)}'),
                               const SizedBox(width: 16),
-                              Text('Success: ${_getSuccessRate(habit).toStringAsFixed(2)}%'),
+                              Text(
+                                'Success: ${_getSuccessRate(habit).toStringAsFixed(2)}%',
+                              ),
                             ],
                           ),
+                          if ((habit.timerMinutes ?? 0) > 0) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                const Icon(Icons.timer_outlined, size: 18),
+                                const SizedBox(width: 4),
+                                Text(_formatTimerLabel(habit.timerMinutes!)),
+                                const SizedBox(width: 12),
+                                TextButton(
+                                  onPressed: () => _startHabitTimer(habit),
+                                  child: const Text('Start Timer'),
+                                ),
+                              ],
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -267,6 +333,123 @@ class _TodayScreenState extends State<TodayScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+class _HabitTimerDialog extends StatefulWidget {
+  final String habitName;
+  final Duration duration;
+
+  const _HabitTimerDialog({required this.habitName, required this.duration});
+
+  @override
+  State<_HabitTimerDialog> createState() => _HabitTimerDialogState();
+}
+
+class _HabitTimerDialogState extends State<_HabitTimerDialog> {
+  Timer? _ticker;
+  late int _remainingSeconds;
+  late int _initialSeconds;
+  bool _running = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initialSeconds = widget.duration.inSeconds;
+    _remainingSeconds = _initialSeconds;
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  void _toggleRunState() {
+    if (_running) {
+      _ticker?.cancel();
+      setState(() {
+        _running = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _running = true;
+    });
+
+    _ticker = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      if (_remainingSeconds <= 1) {
+        timer.cancel();
+        setState(() {
+          _remainingSeconds = 0;
+          _running = false;
+        });
+        Navigator.of(context).pop(true);
+        return;
+      }
+
+      setState(() {
+        _remainingSeconds -= 1;
+      });
+    });
+  }
+
+  void _reset() {
+    _ticker?.cancel();
+    setState(() {
+      _running = false;
+      _remainingSeconds = _initialSeconds;
+    });
+  }
+
+  String _formatRemainingTime() {
+    final minutes = _remainingSeconds ~/ 60;
+    final seconds = _remainingSeconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('${widget.habitName} Timer'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            _formatRemainingTime(),
+            style: const TextStyle(fontSize: 36, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ElevatedButton.icon(
+                onPressed: _toggleRunState,
+                icon: Icon(_running ? Icons.pause : Icons.play_arrow),
+                label: Text(_running ? 'Pause' : 'Start'),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: _reset,
+                child: const Text('Reset'),
+              ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Close'),
+        ),
+      ],
     );
   }
 }
