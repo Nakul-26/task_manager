@@ -105,9 +105,13 @@ class ReminderService {
   }
 
   Future<void> _scheduleDaily(Habit habit) async {
-    final when = _nextTimeTodayOrTomorrow(
+    final now = tz.TZDateTime.now(tz.local);
+    final start = _startDateTimeAtReminder(habit);
+    final earliest = start.isAfter(now) ? start : now;
+    final when = _nextTimeAtOrAfter(
       habit.reminderHour!,
       habit.reminderMinute!,
+      earliest: earliest,
     );
     await _notifications.zonedSchedule(
       _baseNotificationId(habit.id),
@@ -134,11 +138,15 @@ class ReminderService {
     }
 
     final baseId = _baseNotificationId(habit.id);
+    final now = tz.TZDateTime.now(tz.local);
+    final start = _startDateTimeAtReminder(habit);
+    final earliest = start.isAfter(now) ? start : now;
     for (final day in days) {
       final when = _nextWeekdayTime(
         day,
         habit.reminderHour!,
         habit.reminderMinute!,
+        earliest: earliest,
       );
       await _notifications.zonedSchedule(
         baseId + day,
@@ -159,6 +167,14 @@ class ReminderService {
     final baseId = _baseNotificationId(habit.id);
     int slot = 0;
     DateTime day = DateTime(now.year, now.month, now.day);
+    final startDate = DateTime(
+      habit.startDate.year,
+      habit.startDate.month,
+      habit.startDate.day,
+    );
+    if (startDate.isAfter(day)) {
+      day = startDate;
+    }
 
     while (slot < _oddEvenSchedules) {
       final isMatchingDay = habit.frequency == Frequency.oddDays
@@ -191,33 +207,51 @@ class ReminderService {
     }
   }
 
-  tz.TZDateTime _nextTimeTodayOrTomorrow(int hour, int minute) {
-    final now = tz.TZDateTime.now(tz.local);
+  tz.TZDateTime _startDateTimeAtReminder(Habit habit) {
+    return tz.TZDateTime(
+      tz.local,
+      habit.startDate.year,
+      habit.startDate.month,
+      habit.startDate.day,
+      habit.reminderHour!,
+      habit.reminderMinute!,
+    );
+  }
+
+  tz.TZDateTime _nextTimeAtOrAfter(
+    int hour,
+    int minute, {
+    required tz.TZDateTime earliest,
+  }) {
     var scheduled = tz.TZDateTime(
       tz.local,
-      now.year,
-      now.month,
-      now.day,
+      earliest.year,
+      earliest.month,
+      earliest.day,
       hour,
       minute,
     );
-    if (!scheduled.isAfter(now)) {
+    if (!scheduled.isAfter(earliest)) {
       scheduled = scheduled.add(const Duration(days: 1));
     }
     return scheduled;
   }
 
-  tz.TZDateTime _nextWeekdayTime(int weekday, int hour, int minute) {
-    final now = tz.TZDateTime.now(tz.local);
+  tz.TZDateTime _nextWeekdayTime(
+    int weekday,
+    int hour,
+    int minute, {
+    required tz.TZDateTime earliest,
+  }) {
     var scheduled = tz.TZDateTime(
       tz.local,
-      now.year,
-      now.month,
-      now.day,
+      earliest.year,
+      earliest.month,
+      earliest.day,
       hour,
       minute,
     );
-    while (scheduled.weekday != weekday || !scheduled.isAfter(now)) {
+    while (scheduled.weekday != weekday || !scheduled.isAfter(earliest)) {
       scheduled = scheduled.add(const Duration(days: 1));
     }
     return scheduled;

@@ -19,6 +19,7 @@ class Habit {
   late int? reminderMinute;
   late int? timerMinutes;
   late Color color;
+  late DateTime startDate;
   late DateTime createdAt;
   late DateTime? archivedAt;
   late int sortOrder;
@@ -38,10 +39,11 @@ class Habit {
     this.reminderMinute,
     this.timerMinutes,
     this.color = Colors.blue,
+    DateTime? startDate,
     required this.createdAt,
     this.archivedAt,
     this.sortOrder = -1,
-  });
+  }) : startDate = startDate ?? createdAt;
 
   Map<String, dynamic> toMap() {
     return {
@@ -59,6 +61,7 @@ class Habit {
       'reminderMinute': reminderMinute,
       'timerMinutes': timerMinutes,
       'color': color.toARGB32(),
+      'startDate': startDate.toIso8601String(),
       'createdAt': createdAt.toIso8601String(),
       'archivedAt': archivedAt?.toIso8601String(),
       'sortOrder': sortOrder,
@@ -66,6 +69,7 @@ class Habit {
   }
 
   factory Habit.fromMap(Map<String, dynamic> map) {
+    final createdAt = DateTime.parse(map['createdAt']);
     return Habit(
       id: map['id'],
       name: map['name'],
@@ -83,7 +87,10 @@ class Habit {
       reminderMinute: map['reminderMinute'],
       timerMinutes: map['timerMinutes'],
       color: Color(map['color'] ?? Colors.blue.toARGB32()),
-      createdAt: DateTime.parse(map['createdAt']),
+      startDate: map['startDate'] != null
+          ? DateTime.parse(map['startDate'])
+          : createdAt,
+      createdAt: createdAt,
       archivedAt: map['archivedAt'] != null
           ? DateTime.parse(map['archivedAt'])
           : null,

@@ -27,6 +27,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
   bool _isImportant = false;
   bool _reminderEnabled = false;
   TimeOfDay? _reminderTime;
+  late DateTime _startDate;
 
   String _frequencyLabel(Frequency frequency) {
     switch (frequency) {
@@ -54,6 +55,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
       _daysOfWeek = widget.habit!.daysOfWeek ?? [];
       _color = widget.habit!.color;
       _isImportant = widget.habit!.isImportant;
+      _startDate = _normalizeDate(widget.habit!.startDate);
       _reminderEnabled = widget.habit!.reminderEnabled;
       if (widget.habit!.reminderHour != null &&
           widget.habit!.reminderMinute != null) {
@@ -65,7 +67,16 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
     } else {
       _name = '';
       _description = '';
+      _startDate = _normalizeDate(DateTime.now());
     }
+  }
+
+  DateTime _normalizeDate(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
 
   Future<void> _saveHabit() async {
@@ -114,6 +125,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
         timesPerDay: _timesPerDay,
         timerMinutes: _timerMinutes,
         daysOfWeek: _daysOfWeek,
+        startDate: _startDate,
         reminderEnabled: _reminderEnabled,
         reminderHour: _reminderTime?.hour,
         reminderMinute: _reminderTime?.minute,
@@ -139,6 +151,20 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
       return;
     }
     Navigator.of(context).pop();
+  }
+
+  Future<void> _pickStartDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _startDate,
+      firstDate: DateTime(2000, 1, 1),
+      lastDate: DateTime.now().add(const Duration(days: 3650)),
+    );
+    if (picked != null) {
+      setState(() {
+        _startDate = _normalizeDate(picked);
+      });
+    }
   }
 
   Future<void> _pickReminderTime() async {
@@ -294,6 +320,13 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                   }).toList(),
                 ),
               ],
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Start date'),
+                subtitle: Text(_formatDate(_startDate)),
+                trailing: const Icon(Icons.calendar_today),
+                onTap: _pickStartDate,
+              ),
               const SizedBox(height: 16),
               SwitchListTile(
                 title: const Text('Reminder'),

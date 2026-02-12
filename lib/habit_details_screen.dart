@@ -68,7 +68,7 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
       }
     }
     final today = _normalizeDate(DateTime.now());
-    final start = _normalizeDate(widget.habit.createdAt);
+    final start = _normalizeDate(widget.habit.startDate);
     _totalDays = today.difference(start).inDays + 1;
     if (_totalDays < 0) {
       _totalDays = 0;
@@ -99,7 +99,7 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
   int _computeLongestStreak(Map<String, DailyLog> logByDate) {
     int longest = 0;
     int streak = 0;
-    DateTime date = _normalizeDate(widget.habit.createdAt);
+    DateTime date = _normalizeDate(widget.habit.startDate);
     final end = _normalizeDate(DateTime.now());
     while (!date.isAfter(end)) {
       final key = _formatDate(date);
@@ -119,6 +119,12 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final normalizedStartDate = _normalizeDate(widget.habit.startDate);
+    final today = _normalizeDate(DateTime.now());
+    final calendarLastDay = normalizedStartDate.isAfter(today)
+        ? normalizedStartDate
+        : today;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.habit.name),
@@ -138,16 +144,16 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 20),
-            Text('Start Date: ${_formatDate(_normalizeDate(widget.habit.createdAt))}'),
+            Text('Start Date: ${_formatDate(normalizedStartDate)}'),
             Text('Completed Days: $_completedDays'),
             Text('Missed Days: $_missedDays'),
             Text('Current Streak: $_currentStreak'),
             Text('Longest Streak: $_longestStreak'),
             const SizedBox(height: 20),
             TableCalendar(
-              firstDay: widget.habit.createdAt,
-              lastDay: DateTime.now(),
-              focusedDay: DateTime.now(),
+              firstDay: normalizedStartDate,
+              lastDay: calendarLastDay,
+              focusedDay: calendarLastDay,
               calendarStyle: CalendarStyle(
                 todayDecoration: BoxDecoration(
                   // ignore: deprecated_member_use

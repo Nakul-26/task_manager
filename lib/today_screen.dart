@@ -34,17 +34,24 @@ class _TodayScreenState extends State<TodayScreen> {
     super.dispose();
   }
 
+  DateTime _normalizeDate(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
+  }
+
   Future<void> _loadHabits() async {
     final allHabits = _habitBox.values
         .map((e) => Habit.fromMap(Map<String, dynamic>.from(e)))
         .where((habit) => !habit.isArchived)
         .toList();
     _ensureSortOrder(allHabits);
-    final today = DateTime.now();
+    final today = _normalizeDate(DateTime.now());
     final dayOfWeek = today.weekday; // Monday = 1, Sunday = 7
     final dayOfMonth = today.day;
 
     _habits = allHabits.where((habit) {
+      if (_normalizeDate(habit.startDate).isAfter(today)) {
+        return false;
+      }
       if (habit.frequency == Frequency.daily) {
         return true;
       }
@@ -212,7 +219,7 @@ class _TodayScreenState extends State<TodayScreen> {
   double _getSuccessRate(Habit habit) {
     final logs = _dailyLogBox.values.where((log) => log['habitId'] == habit.id);
     final completedDays = logs.where((log) => log['completed'] as bool).length;
-    final totalDays = DateTime.now().difference(habit.createdAt).inDays + 1;
+    final totalDays = DateTime.now().difference(habit.startDate).inDays + 1;
     return totalDays > 0 ? (completedDays / totalDays) * 100 : 0;
   }
 
