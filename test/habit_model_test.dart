@@ -8,6 +8,7 @@ void main() {
       id: '1',
       name: 'Read',
       isImportant: true,
+      importanceScore: 4,
       isArchived: true,
       description: 'Read a book for 30 minutes',
       createdAt: DateTime(2026, 1, 1),
@@ -20,9 +21,29 @@ void main() {
     expect(newHabit.id, '1');
     expect(newHabit.name, 'Read');
     expect(newHabit.isImportant, true);
+    expect(newHabit.importanceScore, 4);
     expect(newHabit.isArchived, true);
     expect(newHabit.description, 'Read a book for 30 minutes');
     expect(newHabit.createdAt, DateTime(2026, 1, 1));
     expect(newHabit.archivedAt, DateTime(2026, 2, 1));
+  });
+
+  test('Habit model should derive importance score from legacy isImportant', () {
+    final legacyMap = {
+      'id': 'legacy-1',
+      'name': 'Legacy habit',
+      'isImportant': true,
+      'isArchived': false,
+      'description': '',
+      'type': HabitType.binary.index,
+      'frequency': Frequency.daily.index,
+      'color': 0xFF2196F3,
+      'createdAt': DateTime(2026, 1, 1).toIso8601String(),
+    };
+
+    final habit = Habit.fromMap(legacyMap);
+
+    expect(habit.isImportant, true);
+    expect(habit.importanceScore, 1);
   });
 }

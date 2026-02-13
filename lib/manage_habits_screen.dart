@@ -37,7 +37,13 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
           .toList();
       final activeHabits = habits.where((habit) => !habit.isArchived).toList();
       _ensureSortOrder(activeHabits);
-      activeHabits.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      activeHabits.sort((a, b) {
+        final scoreCompare = b.importanceScore.compareTo(a.importanceScore);
+        if (scoreCompare != 0) {
+          return scoreCompare;
+        }
+        return a.sortOrder.compareTo(b.sortOrder);
+      });
       setState(() {
         _activeHabits = activeHabits;
       });

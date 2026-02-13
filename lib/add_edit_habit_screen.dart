@@ -25,6 +25,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
   List<int> _daysOfWeek = [];
   Color _color = Colors.blue;
   bool _isImportant = false;
+  int _importanceScore = 0;
   bool _reminderEnabled = false;
   TimeOfDay? _reminderTime;
   late DateTime _startDate;
@@ -55,6 +56,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
       _daysOfWeek = widget.habit!.daysOfWeek ?? [];
       _color = widget.habit!.color;
       _isImportant = widget.habit!.isImportant;
+      _importanceScore = widget.habit!.importanceScore;
       _startDate = _normalizeDate(widget.habit!.startDate);
       _reminderEnabled = widget.habit!.reminderEnabled;
       if (widget.habit!.reminderHour != null &&
@@ -67,6 +69,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
     } else {
       _name = '';
       _description = '';
+      _importanceScore = 0;
       _startDate = _normalizeDate(DateTime.now());
     }
   }
@@ -118,7 +121,8 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
         id: widget.habit?.id ?? const Uuid().v4(),
         name: _name,
         description: _description,
-        isImportant: _isImportant,
+        isImportant: _importanceScore > 0,
+        importanceScore: _importanceScore,
         isArchived: widget.habit?.isArchived ?? false,
         type: _type,
         frequency: _frequency,
@@ -247,6 +251,30 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                 onChanged: (value) {
                   setState(() {
                     _isImportant = value;
+                    if (!value && _importanceScore > 0) {
+                      _importanceScore = 0;
+                    }
+                    if (value && _importanceScore == 0) {
+                      _importanceScore = 1;
+                    }
+                  });
+                },
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Importance Score'),
+                subtitle: Text('$_importanceScore / 5'),
+              ),
+              Slider(
+                value: _importanceScore.toDouble(),
+                min: 0,
+                max: 5,
+                divisions: 5,
+                label: _importanceScore.toString(),
+                onChanged: (value) {
+                  setState(() {
+                    _importanceScore = value.round();
+                    _isImportant = _importanceScore > 0;
                   });
                 },
               ),

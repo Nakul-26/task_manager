@@ -66,7 +66,13 @@ class _TodayScreenState extends State<TodayScreen> {
       }
       return false;
     }).toList()
-      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      ..sort((a, b) {
+        final scoreCompare = b.importanceScore.compareTo(a.importanceScore);
+        if (scoreCompare != 0) {
+          return scoreCompare;
+        }
+        return a.sortOrder.compareTo(b.sortOrder);
+      });
 
     _checkDailyReset();
     if (mounted) {

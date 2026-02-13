@@ -8,6 +8,7 @@ class Habit {
   late String id;
   late String name;
   late bool isImportant;
+  late int importanceScore;
   late bool isArchived;
   late String description;
   late HabitType type;
@@ -28,6 +29,7 @@ class Habit {
     required this.id,
     required this.name,
     this.isImportant = false,
+    this.importanceScore = 0,
     this.isArchived = false,
     required this.description,
     this.type = HabitType.binary,
@@ -50,6 +52,7 @@ class Habit {
       'id': id,
       'name': name,
       'isImportant': isImportant,
+      'importanceScore': importanceScore,
       'isArchived': isArchived,
       'description': description,
       'type': type.index,
@@ -70,10 +73,14 @@ class Habit {
 
   factory Habit.fromMap(Map<String, dynamic> map) {
     final createdAt = DateTime.parse(map['createdAt']);
+    final parsedImportanceScore = _parseImportanceScore(map['importanceScore']);
+    final importanceScore =
+        parsedImportanceScore ?? ((map['isImportant'] ?? false) ? 1 : 0);
     return Habit(
       id: map['id'],
       name: map['name'],
-      isImportant: map['isImportant'] ?? false,
+      isImportant: importanceScore > 0,
+      importanceScore: importanceScore,
       isArchived: map['isArchived'] ?? false,
       description: map['description'] ?? '',
       type: HabitType.values[map['type'] ?? 0],
@@ -96,6 +103,19 @@ class Habit {
           : null,
       sortOrder: map['sortOrder'] ?? -1,
     );
+  }
+
+  static int? _parseImportanceScore(dynamic value) {
+    if (value is int) {
+      return value;
+    }
+    if (value is double) {
+      return value.round();
+    }
+    if (value is String) {
+      return int.tryParse(value);
+    }
+    return null;
   }
 }
 
