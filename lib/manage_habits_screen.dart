@@ -125,12 +125,27 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
     );
   }
 
+  void _openAddHabit() {
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (context) => const AddEditHabitScreen(),
+          ),
+        )
+        .then((_) => _loadHabits());
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Manage Habits'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            tooltip: 'Add Habit',
+            onPressed: _openAddHabit,
+          ),
           IconButton(
             icon: const Icon(Icons.archive_outlined),
             tooltip: 'Archived Habits',
@@ -149,6 +164,7 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
       body: _activeHabits.isEmpty
           ? const Center(child: Text('No habits yet.'))
           : ReorderableListView.builder(
+              padding: const EdgeInsets.only(bottom: 16),
               buildDefaultDragHandles: false,
               onReorder: _onReorder,
               itemCount: _activeHabits.length,
@@ -192,18 +208,6 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
                 );
               },
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.of(context)
-              .push(
-                MaterialPageRoute(
-                  builder: (context) => const AddEditHabitScreen(),
-                ),
-              )
-              .then((_) => _loadHabits());
-        },
-        child: const Icon(Icons.add),
-      ),
     );
   }
 }

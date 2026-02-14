@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:habit_tracker/history_screen.dart';
 import 'package:habit_tracker/habit_details_screen.dart';
 import 'package:habit_tracker/manage_habits_screen.dart';
 import 'package:habit_tracker/models.dart';
@@ -120,6 +121,14 @@ class _TodayScreenState extends State<TodayScreen> {
     );
   }
 
+  void _openHistory() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const HistoryScreen(),
+      ),
+    );
+  }
+
   Future<void> _toggleHabitCompletion(Habit habit, bool? newValue) async {
     String today = _formatDate(DateTime.now());
     DailyLog log =
@@ -235,6 +244,11 @@ class _TodayScreenState extends State<TodayScreen> {
       appBar: AppBar(
         title: const Text('Today\'s Habits'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: 'History',
+            onPressed: _openHistory,
+          ),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: _manageHabits,

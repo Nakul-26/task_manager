@@ -1,118 +1,117 @@
-# task_manager
-An Android applications to help manage daily tasks
+# Habit Tracker
 
-## Project: Habit Tracker MVP
+Offline-first Flutter app for tracking habits with reminders, progress, and history.
 
-Build a **very simple, offline-first habit and task tracking app** using Flutter.  
-The goal is to create a minimal, distraction-free tool for daily personal habit tracking.
-
----
-
-## Target Platforms
+## Platforms
 - Android (primary)
-- Windows Desktop (optional, same Flutter codebase)
+- iOS
+- Web
+- Windows
+- macOS
+- Linux
 
----
+## Current Features
 
-## Core Goal (MVP)
-Create an app where the user can:
-- Add habits/tasks
-- Mark them as done each day
-- Automatically reset daily while keeping history
+### Today Screen
+- Shows active habits for the current date (filters by start date and frequency).
+- Supports two habit types:
+  - `binary`: complete/incomplete checkbox
+  - `counted`: increment/decrement progress toward `timesPerDay`
+- Displays per-habit:
+  - name and description
+  - color indicator
+  - importance marker/score ordering
+  - current streak
+  - success rate
+- Optional per-habit timer with start/pause/reset dialog.
 
-No advanced features in MVP.
+### Habit Details
+- Tap a habit on Today screen to open details.
+- Shows:
+  - success rate
+  - start date
+  - completed/missed days
+  - current streak and longest streak
+  - calendar view with completed days highlighted
 
----
+### Add / Edit Habit
+- Create and update habits with:
+  - name
+  - description
+  - importance score (0-5)
+  - type (`binary` or `counted`)
+  - `timesPerDay` for counted habits
+  - frequency (`daily`, `weekly`, `oddDays`, `evenDays`)
+  - weekly day selection when frequency is weekly
+  - start date
+  - reminder on/off + time
+  - optional timer minutes
+  - color
 
-## Features (MVP Only)
+### Manage Habits
+- Reorder active habits (drag-and-drop).
+- Edit, archive, and delete habits.
+- Archived habits are hidden from Today screen.
 
-### 1. Today’s Habits Screen
-- Display a list of all habits.
-- Each habit has a checkbox to mark as completed or not.
-- Show today’s date.
-- Changes are saved automatically.
+### Archived Habits Screen
+- View archived habits.
+- Unarchive, edit, or delete archived habits.
 
----
+### Reminders (Local Notifications)
+- Timezone-aware local notifications via `flutter_local_notifications` + `timezone`.
+- Supports scheduling for:
+  - daily habits
+  - weekly habits on selected weekdays
+  - odd-day / even-day habits
+- Reminders are synced on app startup and whenever a habit is changed.
 
-### 2. Add / Manage Habits
-- Add a new habit with:
-  - Name (string)
-  - Importance flag (boolean)
-- Delete habits.
-
-(No descriptions, frequencies, or categories in MVP.)
-
----
-
-### 3. Daily Reset Logic
-- Each new day starts with all habits unchecked.
-- Previous day completion data is stored and not modified.
-- Reset happens automatically when the app is opened on a new date.
-
----
+### Data & Persistence
+- Local-only storage using Hive boxes:
+  - `habits`
+  - `dailyLogs`
+- No account/auth required.
+- No cloud sync.
 
 ## Data Model
 
 ### Habit
-- id (string)
-- name (string)
-- isImportant (bool)
-- createdAt (DateTime)
+- `id` (String)
+- `name` (String)
+- `description` (String)
+- `isImportant` (bool)
+- `importanceScore` (int)
+- `type` (`binary` or `counted`)
+- `frequency` (`daily`, `weekly`, `oddDays`, `evenDays`)
+- `daysOfWeek` (List<int>?)
+- `timesPerDay` (int?)
+- `reminderEnabled` (bool)
+- `reminderHour` / `reminderMinute` (int?)
+- `timerMinutes` (int?)
+- `color` (Color)
+- `startDate` (DateTime)
+- `createdAt` (DateTime)
+- `isArchived` (bool)
+- `archivedAt` (DateTime?)
+- `sortOrder` (int)
 
 ### DailyLog
-- date (YYYY-MM-DD)
-- habitId (string)
-- completed (bool)
+- `date` (`YYYY-MM-DD`)
+- `habitId` (String)
+- `completed` (bool)
+- `count` (int?) for counted habits
 
----
+## Notes
+- History is available from the Today screen app bar (history icon) and groups logs by date.
 
-## Storage
-- Local-only storage (offline-first).
-- Use Hive or simple key-value storage.
-- No internet, no accounts, no cloud.
+## Run
+```bash
+flutter pub get
+flutter run
+```
 
----
-
-## Non-Goals (Explicitly Excluded)
-- User authentication
-- Cloud sync
-- Reminders or notifications
-- Timers
-- Analytics dashboards
-- Streaks or gamification
-- Social features
-- Complex UI animations
-
----
-
-## UI Philosophy
-- Extremely simple and minimal.
-- One-tap interactions.
-- Focus on speed: open → check → close.
-- No clutter or unnecessary screens.
-
----
-
-## Implementation Order
-1. Flutter project setup
-2. Home screen with static habit list
-3. Add habit functionality
-4. Local storage integration
-5. Daily reset & history logic
-
----
-
-## Long-Term Vision (Post-MVP)
-- Streak tracking
-- Habit statistics
-- Reminders and timers
-- Habit frequency settings
-- Cloud backup (optional)
-
-
-
-### To create apk:
-- flutter clean
-- flutter config --no-enable-windows-desktop
-- flutter pub get
-- flutter build apk
+## Build APK
+```bash
+flutter clean
+flutter pub get
+flutter build apk
+```
