@@ -374,62 +374,108 @@ class _HabitTimerDialog extends StatefulWidget {
   State<_HabitTimerDialog> createState() => _HabitTimerDialogState();
 }
 
-class _HabitTimerDialogState extends State<_HabitTimerDialog> {
+class _HabitTimerDialogState extends State<_HabitTimerDialog>
+    with WidgetsBindingObserver {
   Timer? _ticker;
   late int _remainingSeconds;
   late int _initialSeconds;
   bool _running = false;
+  DateTime? _runningUntil;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initialSeconds = widget.duration.inSeconds;
     _remainingSeconds = _initialSeconds;
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _ticker?.cancel();
     super.dispose();
   }
 
-  void _toggleRunState() {
-    if (_running) {
-      _ticker?.cancel();
-      setState(() {
-        _running = false;
-      });
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_running) {
       return;
     }
+    if (state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden) {
+      _syncRemainingFromClock();
+    }
+  }
 
+  void _toggleRunState() {
+    if (_running) {
+      _pauseTimer();
+      return;
+    }
+    _startTimer();
+  }
+
+  void _startTimer() {
+    _runningUntil = DateTime.now().add(Duration(seconds: _remainingSeconds));
     setState(() {
       _running = true;
     });
+    _startTicker();
+  }
 
-    _ticker = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-
-      if (_remainingSeconds <= 1) {
-        timer.cancel();
-        setState(() {
-          _remainingSeconds = 0;
-          _running = false;
-        });
-        Navigator.of(context).pop(true);
-        return;
-      }
-
+  void _pauseTimer() {
+    _syncRemainingFromClock();
+    _ticker?.cancel();
+    _ticker = null;
+    _runningUntil = null;
+    if (mounted) {
       setState(() {
-        _remainingSeconds -= 1;
+        _running = false;
       });
+    }
+  }
+
+  void _startTicker() {
+    _ticker?.cancel();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted || !_running) {
+        timer.cancel();
+        return;
+      }
+      _syncRemainingFromClock();
     });
+  }
+
+  void _syncRemainingFromClock() {
+    final target = _runningUntil;
+    if (target == null) {
+      return;
+    }
+    final secondsLeft = target.difference(DateTime.now()).inSeconds;
+    if (secondsLeft <= 0) {
+      _ticker?.cancel();
+      _ticker = null;
+      _runningUntil = null;
+      setState(() {
+        _remainingSeconds = 0;
+        _running = false;
+      });
+      Navigator.of(context).pop(true);
+      return;
+    }
+    if (_remainingSeconds != secondsLeft && mounted) {
+      setState(() {
+        _remainingSeconds = secondsLeft;
+      });
+    }
   }
 
   void _reset() {
     _ticker?.cancel();
+    _ticker = null;
+    _runningUntil = null;
     setState(() {
       _running = false;
       _remainingSeconds = _initialSeconds;
