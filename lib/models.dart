@@ -21,6 +21,7 @@ class Habit {
   late int? timerMinutes;
   late Color color;
   late DateTime startDate;
+  late DateTime? endDate;
   late DateTime createdAt;
   late DateTime? archivedAt;
   late int sortOrder;
@@ -42,6 +43,7 @@ class Habit {
     this.timerMinutes,
     this.color = Colors.blue,
     DateTime? startDate,
+    this.endDate,
     required this.createdAt,
     this.archivedAt,
     this.sortOrder = -1,
@@ -65,6 +67,7 @@ class Habit {
       'timerMinutes': timerMinutes,
       'color': color.toARGB32(),
       'startDate': startDate.toIso8601String(),
+      'endDate': endDate?.toIso8601String(),
       'createdAt': createdAt.toIso8601String(),
       'archivedAt': archivedAt?.toIso8601String(),
       'sortOrder': sortOrder,
@@ -97,6 +100,7 @@ class Habit {
       startDate: map['startDate'] != null
           ? DateTime.parse(map['startDate'])
           : createdAt,
+      endDate: map['endDate'] != null ? DateTime.parse(map['endDate']) : null,
       createdAt: createdAt,
       archivedAt: map['archivedAt'] != null
           ? DateTime.parse(map['archivedAt'])

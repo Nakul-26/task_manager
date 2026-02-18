@@ -29,6 +29,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
   bool _reminderEnabled = false;
   TimeOfDay? _reminderTime;
   late DateTime _startDate;
+  DateTime? _endDate;
 
   String _frequencyLabel(Frequency frequency) {
     switch (frequency) {
@@ -58,6 +59,9 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
       _isImportant = widget.habit!.isImportant;
       _importanceScore = widget.habit!.importanceScore;
       _startDate = _normalizeDate(widget.habit!.startDate);
+      _endDate = widget.habit!.endDate != null
+          ? _normalizeDate(widget.habit!.endDate!)
+          : null;
       _reminderEnabled = widget.habit!.reminderEnabled;
       if (widget.habit!.reminderHour != null &&
           widget.habit!.reminderMinute != null) {
@@ -71,6 +75,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
       _description = '';
       _importanceScore = 0;
       _startDate = _normalizeDate(DateTime.now());
+      _endDate = null;
     }
   }
 
@@ -97,6 +102,12 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
       if (_reminderEnabled && _reminderTime == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Please choose a reminder time.')),
+        );
+        return;
+      }
+      if (_endDate != null && _endDate!.isBefore(_startDate)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('End date cannot be before start date.')),
         );
         return;
       }
@@ -130,6 +141,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
         timerMinutes: _timerMinutes,
         daysOfWeek: _daysOfWeek,
         startDate: _startDate,
+        endDate: _endDate,
         reminderEnabled: _reminderEnabled,
         reminderHour: _reminderTime?.hour,
         reminderMinute: _reminderTime?.minute,
@@ -167,8 +179,31 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
     if (picked != null) {
       setState(() {
         _startDate = _normalizeDate(picked);
+        if (_endDate != null && _endDate!.isBefore(_startDate)) {
+          _endDate = _startDate;
+        }
       });
     }
+  }
+
+  Future<void> _pickEndDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _endDate ?? _startDate,
+      firstDate: _startDate,
+      lastDate: DateTime.now().add(const Duration(days: 3650)),
+    );
+    if (picked != null) {
+      setState(() {
+        _endDate = _normalizeDate(picked);
+      });
+    }
+  }
+
+  void _clearEndDate() {
+    setState(() {
+      _endDate = null;
+    });
   }
 
   Future<void> _pickReminderTime() async {
@@ -354,6 +389,26 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                 subtitle: Text(_formatDate(_startDate)),
                 trailing: const Icon(Icons.calendar_today),
                 onTap: _pickStartDate,
+              ),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('End date'),
+                subtitle: Text(
+                  _endDate == null ? 'No end date' : _formatDate(_endDate!),
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_endDate != null)
+                      IconButton(
+                        tooltip: 'Clear end date',
+                        icon: const Icon(Icons.clear),
+                        onPressed: _clearEndDate,
+                      ),
+                    const Icon(Icons.calendar_today),
+                  ],
+                ),
+                onTap: _pickEndDate,
               ),
               const SizedBox(height: 16),
               SwitchListTile(

@@ -53,6 +53,10 @@ class _TodayScreenState extends State<TodayScreen> {
       if (_normalizeDate(habit.startDate).isAfter(today)) {
         return false;
       }
+      if (habit.endDate != null &&
+          _normalizeDate(habit.endDate!).isBefore(today)) {
+        return false;
+      }
       if (habit.frequency == Frequency.daily) {
         return true;
       }
@@ -198,6 +202,36 @@ class _TodayScreenState extends State<TodayScreen> {
         '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
 
+  DateTime? _getStatsEndDateExcludingToday(Habit habit) {
+    final today = _normalizeDate(DateTime.now());
+    final yesterday = today.subtract(const Duration(days: 1));
+    final normalizedStart = _normalizeDate(habit.startDate);
+    final normalizedEndDate = habit.endDate != null
+        ? _normalizeDate(habit.endDate!)
+        : null;
+    final statsEnd = normalizedEndDate != null && normalizedEndDate.isBefore(yesterday)
+        ? normalizedEndDate
+        : yesterday;
+    if (statsEnd.isBefore(normalizedStart)) {
+      return null;
+    }
+    return statsEnd;
+  }
+
+  DateTime? _parseDateString(String date) {
+    final parts = date.split('-');
+    if (parts.length != 3) {
+      return null;
+    }
+    final year = int.tryParse(parts[0]);
+    final month = int.tryParse(parts[1]);
+    final day = int.tryParse(parts[2]);
+    if (year == null || month == null || day == null) {
+      return null;
+    }
+    return DateTime(year, month, day);
+  }
+
   String _formatTimerLabel(int minutes) {
     if (minutes < 60) {
       return '$minutes min';
@@ -211,8 +245,12 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   int _getStreak(Habit habit) {
+    final statsEnd = _getStatsEndDateExcludingToday(habit);
+    if (statsEnd == null) {
+      return 0;
+    }
     int streak = 0;
-    DateTime date = DateTime.now();
+    DateTime date = statsEnd;
     while (true) {
       final dateString = _formatDate(date);
       final logMap = _dailyLogBox.get('${habit.id}_$dateString');
@@ -232,9 +270,24 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   double _getSuccessRate(Habit habit) {
-    final logs = _dailyLogBox.values.where((log) => log['habitId'] == habit.id);
-    final completedDays = logs.where((log) => log['completed'] as bool).length;
-    final totalDays = DateTime.now().difference(habit.startDate).inDays + 1;
+    final start = _normalizeDate(habit.startDate);
+    final end = _getStatsEndDateExcludingToday(habit);
+    if (end == null) {
+      return 0;
+    }
+    final completedDays = _dailyLogBox.values.where((rawLog) {
+      final log = Map<String, dynamic>.from(rawLog as Map);
+      if (log['habitId'] != habit.id || log['completed'] != true) {
+        return false;
+      }
+      final logDate = _parseDateString(log['date'] as String? ?? '');
+      if (logDate == null) {
+        return false;
+      }
+      final normalizedLogDate = _normalizeDate(logDate);
+      return !normalizedLogDate.isBefore(start) && !normalizedLogDate.isAfter(end);
+    }).length;
+    final totalDays = end.difference(start).inDays + 1;
     return totalDays > 0 ? (completedDays / totalDays) * 100 : 0;
   }
 
