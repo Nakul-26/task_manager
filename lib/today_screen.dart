@@ -5,6 +5,7 @@ import 'package:habit_tracker/history_screen.dart';
 import 'package:habit_tracker/habit_details_screen.dart';
 import 'package:habit_tracker/manage_habits_screen.dart';
 import 'package:habit_tracker/models.dart';
+import 'package:habit_tracker/utils/habit_schedule_utils.dart' as schedule_utils;
 import 'package:hive_flutter/hive_flutter.dart';
 
 class TodayScreen extends StatefulWidget {
@@ -36,7 +37,7 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   DateTime _normalizeDate(DateTime date) {
-    return DateTime(date.year, date.month, date.day);
+    return schedule_utils.normalizeDate(date);
   }
 
   Future<void> _loadHabits() async {
@@ -46,9 +47,6 @@ class _TodayScreenState extends State<TodayScreen> {
         .toList();
     _ensureSortOrder(allHabits);
     final today = _normalizeDate(DateTime.now());
-    final dayOfWeek = today.weekday; // Monday = 1, Sunday = 7
-    final dayOfMonth = today.day;
-
     _habits = allHabits.where((habit) {
       if (_normalizeDate(habit.startDate).isAfter(today)) {
         return false;
@@ -57,19 +55,7 @@ class _TodayScreenState extends State<TodayScreen> {
           _normalizeDate(habit.endDate!).isBefore(today)) {
         return false;
       }
-      if (habit.frequency == Frequency.daily) {
-        return true;
-      }
-      if (habit.frequency == Frequency.weekly) {
-        return habit.daysOfWeek?.contains(dayOfWeek) ?? false;
-      }
-      if (habit.frequency == Frequency.oddDays) {
-        return dayOfMonth.isOdd;
-      }
-      if (habit.frequency == Frequency.evenDays) {
-        return dayOfMonth.isEven;
-      }
-      return false;
+      return schedule_utils.isScheduledDay(habit, today);
     }).toList()
       ..sort((a, b) {
         final scoreCompare = b.importanceScore.compareTo(a.importanceScore);
@@ -198,38 +184,42 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   String _formatDate(DateTime date) {
-    return
-        '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    return schedule_utils.formatDate(date);
   }
 
-  DateTime? _getStatsEndDateExcludingToday(Habit habit) {
+  bool _isSameDate(DateTime a, DateTime b) {
+    return schedule_utils.isSameDate(a, b);
+  }
+
+  bool _isHabitCompletedOnDate(Habit habit, DateTime date) {
+    final dateString = _formatDate(_normalizeDate(date));
+    final logMap = _dailyLogBox.get('${habit.id}_$dateString');
+    if (logMap == null) {
+      return false;
+    }
+    final log = DailyLog.fromMap(Map<String, dynamic>.from(logMap));
+    return log.completed;
+  }
+
+  DateTime? _getStatsEndDate(Habit habit) {
     final today = _normalizeDate(DateTime.now());
-    final yesterday = today.subtract(const Duration(days: 1));
     final normalizedStart = _normalizeDate(habit.startDate);
     final normalizedEndDate = habit.endDate != null
         ? _normalizeDate(habit.endDate!)
         : null;
-    final statsEnd = normalizedEndDate != null && normalizedEndDate.isBefore(yesterday)
+    final statsEnd = normalizedEndDate != null && normalizedEndDate.isBefore(today)
         ? normalizedEndDate
-        : yesterday;
-    if (statsEnd.isBefore(normalizedStart)) {
+        : today;
+    final shouldExcludeToday = _isSameDate(statsEnd, today) &&
+        schedule_utils.isScheduledDay(habit, today) &&
+        !_isHabitCompletedOnDate(habit, today);
+    final effectiveStatsEnd = shouldExcludeToday
+        ? statsEnd.subtract(const Duration(days: 1))
+        : statsEnd;
+    if (effectiveStatsEnd.isBefore(normalizedStart)) {
       return null;
     }
-    return statsEnd;
-  }
-
-  DateTime? _parseDateString(String date) {
-    final parts = date.split('-');
-    if (parts.length != 3) {
-      return null;
-    }
-    final year = int.tryParse(parts[0]);
-    final month = int.tryParse(parts[1]);
-    final day = int.tryParse(parts[2]);
-    if (year == null || month == null || day == null) {
-      return null;
-    }
-    return DateTime(year, month, day);
+    return effectiveStatsEnd;
   }
 
   String _formatTimerLabel(int minutes) {
@@ -245,50 +235,49 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   int _getStreak(Habit habit) {
-    final statsEnd = _getStatsEndDateExcludingToday(habit);
+    final statsEnd = _getStatsEndDate(habit);
     if (statsEnd == null) {
       return 0;
     }
     int streak = 0;
+    final normalizedStart = _normalizeDate(habit.startDate);
     DateTime date = statsEnd;
-    while (true) {
-      final dateString = _formatDate(date);
-      final logMap = _dailyLogBox.get('${habit.id}_$dateString');
-      if (logMap != null) {
-        final log = DailyLog.fromMap(Map<String, dynamic>.from(logMap));
-        if (log.completed) {
-          streak++;
-          date = date.subtract(const Duration(days: 1));
-        } else {
-          break;
-        }
-      } else {
-        break;
+    while (!date.isBefore(normalizedStart)) {
+      if (!schedule_utils.isScheduledDay(habit, date)) {
+        date = date.subtract(const Duration(days: 1));
+        continue;
       }
+      if (_isHabitCompletedOnDate(habit, date)) {
+        streak++;
+        date = date.subtract(const Duration(days: 1));
+        continue;
+      }
+      break;
     }
     return streak;
   }
 
   double _getSuccessRate(Habit habit) {
     final start = _normalizeDate(habit.startDate);
-    final end = _getStatsEndDateExcludingToday(habit);
+    final end = _getStatsEndDate(habit);
     if (end == null) {
       return 0;
     }
-    final completedDays = _dailyLogBox.values.where((rawLog) {
-      final log = Map<String, dynamic>.from(rawLog as Map);
-      if (log['habitId'] != habit.id || log['completed'] != true) {
-        return false;
+    int completedScheduledDays = 0;
+    int totalScheduledDays = 0;
+    DateTime date = start;
+    while (!date.isAfter(end)) {
+      if (schedule_utils.isScheduledDay(habit, date)) {
+        totalScheduledDays++;
+        if (_isHabitCompletedOnDate(habit, date)) {
+          completedScheduledDays++;
+        }
       }
-      final logDate = _parseDateString(log['date'] as String? ?? '');
-      if (logDate == null) {
-        return false;
-      }
-      final normalizedLogDate = _normalizeDate(logDate);
-      return !normalizedLogDate.isBefore(start) && !normalizedLogDate.isAfter(end);
-    }).length;
-    final totalDays = end.difference(start).inDays + 1;
-    return totalDays > 0 ? (completedDays / totalDays) * 100 : 0;
+      date = date.add(const Duration(days: 1));
+    }
+    return totalScheduledDays > 0
+        ? (completedScheduledDays / totalScheduledDays) * 100
+        : 0;
   }
 
   @override

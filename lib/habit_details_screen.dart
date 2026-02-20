@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:habit_tracker/models.dart';
+import 'package:habit_tracker/utils/habit_schedule_utils.dart' as schedule_utils;
 import 'package:table_calendar/table_calendar.dart';
 import 'package:hive/hive.dart';
 
@@ -30,7 +31,7 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
   }
 
   DateTime _normalizeDate(DateTime date) {
-    return DateTime(date.year, date.month, date.day);
+    return schedule_utils.normalizeDate(date);
   }
 
   DateTime _parseLogDate(String date) {
@@ -46,28 +47,39 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
   }
 
   String _formatDate(DateTime date) {
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+    return schedule_utils.formatDate(date);
   }
 
-  DateTime? _getStatsEndDateExcludingToday() {
+  bool _isSameDate(DateTime a, DateTime b) {
+    return schedule_utils.isSameDate(a, b);
+  }
+
+  DateTime? _getStatsEndDate(Map<String, DailyLog> logByDate) {
     final today = _normalizeDate(DateTime.now());
-    final yesterday = today.subtract(const Duration(days: 1));
     final normalizedStart = _normalizeDate(widget.habit.startDate);
     final normalizedEndDate = widget.habit.endDate != null
         ? _normalizeDate(widget.habit.endDate!)
         : null;
-    final statsEnd = normalizedEndDate != null && normalizedEndDate.isBefore(yesterday)
+    final statsEnd = normalizedEndDate != null && normalizedEndDate.isBefore(today)
         ? normalizedEndDate
-        : yesterday;
-    if (statsEnd.isBefore(normalizedStart)) {
+        : today;
+    final todayKey = _formatDate(today);
+    final isTodayCompleted = logByDate[todayKey]?.completed ?? false;
+    final shouldExcludeToday =
+        _isSameDate(statsEnd, today) &&
+        schedule_utils.isScheduledDay(widget.habit, today) &&
+        !isTodayCompleted;
+    final effectiveStatsEnd = shouldExcludeToday
+        ? statsEnd.subtract(const Duration(days: 1))
+        : statsEnd;
+    if (effectiveStatsEnd.isBefore(normalizedStart)) {
       return null;
     }
-    return statsEnd;
+    return effectiveStatsEnd;
   }
 
   void _loadLogs() {
     final start = _normalizeDate(widget.habit.startDate);
-    final statsEnd = _getStatsEndDateExcludingToday();
     final logs = _dailyLogBox.values
         .map((e) => DailyLog.fromMap(Map<String, dynamic>.from(e as Map)))
         .where((log) => log.habitId == widget.habit.id);
@@ -78,17 +90,13 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
       final normalizedLogDate = _normalizeDate(_parseLogDate(log.date));
       logByDate[log.date] = log;
       if (log.completed) {
-        if (statsEnd != null &&
-            !normalizedLogDate.isBefore(start) &&
-            !normalizedLogDate.isAfter(statsEnd)) {
-          _completedDays++;
-        }
         if (_completedEvents[normalizedLogDate] == null) {
           _completedEvents[normalizedLogDate] = [];
         }
         _completedEvents[normalizedLogDate]!.add(log);
       }
     }
+    final statsEnd = _getStatsEndDate(logByDate);
     if (statsEnd == null) {
       _totalDays = 0;
       _missedDays = 0;
@@ -98,7 +106,19 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
       setState(() {});
       return;
     }
-    _totalDays = statsEnd.difference(start).inDays + 1;
+    DateTime date = start;
+    _totalDays = 0;
+    _completedDays = 0;
+    while (!date.isAfter(statsEnd)) {
+      if (schedule_utils.isScheduledDay(widget.habit, date)) {
+        _totalDays++;
+        final key = _formatDate(date);
+        if (logByDate[key]?.completed == true) {
+          _completedDays++;
+        }
+      }
+      date = date.add(const Duration(days: 1));
+    }
     _missedDays = (_totalDays - _completedDays).clamp(0, _totalDays);
     _successRate = _totalDays > 0 ? (_completedDays / _totalDays) * 100 : 0;
     _currentStreak = _computeCurrentStreak(logByDate, statsEnd);
@@ -111,8 +131,13 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
     DateTime effectiveToday,
   ) {
     int streak = 0;
+    final start = _normalizeDate(widget.habit.startDate);
     DateTime date = _normalizeDate(effectiveToday);
-    while (true) {
+    while (!date.isBefore(start)) {
+      if (!schedule_utils.isScheduledDay(widget.habit, date)) {
+        date = date.subtract(const Duration(days: 1));
+        continue;
+      }
       final key = _formatDate(date);
       final log = logByDate[key];
       if (log != null && log.completed) {
@@ -134,6 +159,10 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
     DateTime date = _normalizeDate(widget.habit.startDate);
     final end = _normalizeDate(effectiveToday);
     while (!date.isAfter(end)) {
+      if (!schedule_utils.isScheduledDay(widget.habit, date)) {
+        date = date.add(const Duration(days: 1));
+        continue;
+      }
       final key = _formatDate(date);
       final log = logByDate[key];
       if (log != null && log.completed) {
