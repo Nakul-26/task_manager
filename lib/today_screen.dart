@@ -328,11 +328,15 @@ class _TodayScreenState extends State<TodayScreen> {
                         children: [
                           Row(
                             children: [
-                              Text(
-                                habit.name,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
+                              Expanded(
+                                child: Text(
+                                  habit.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                               if (habit.isImportant) ...[
@@ -345,7 +349,11 @@ class _TodayScreenState extends State<TodayScreen> {
                               ],
                             ],
                           ),
-                          Text(habit.description),
+                          Text(
+                            habit.description,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                           const SizedBox(height: 8),
                           Row(
                             children: [
@@ -533,7 +541,11 @@ class _HabitTimerDialogState extends State<_HabitTimerDialog>
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text('${widget.habitName} Timer'),
+      title: Text(
+        '${widget.habitName} Timer',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

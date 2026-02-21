@@ -110,8 +110,16 @@ class _ArchivedHabitsScreenState extends State<ArchivedHabitsScreen> {
                 final habit = _archivedHabits[index];
                 return ListTile(
                   leading: const Icon(Icons.archive),
-                  title: Text(habit.name),
-                  subtitle: Text(habit.description),
+                  title: Text(
+                    habit.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    habit.description,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [

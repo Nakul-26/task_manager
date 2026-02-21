@@ -194,7 +194,11 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.habit.name),
+        title: Text(
+          widget.habit.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),

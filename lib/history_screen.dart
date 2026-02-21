@@ -173,11 +173,15 @@ class HistoryScreenState extends State<HistoryScreen> {
                               children: [
                                 Row(
                                   children: [
-                                    Text(
-                                      habit.name,
-                                      style: const TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
+                                    Expanded(
+                                      child: Text(
+                                        habit.name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
                                     ),
                                     if (habit.isImportant) ...[
@@ -190,7 +194,11 @@ class HistoryScreenState extends State<HistoryScreen> {
                                     ],
                                   ],
                                 ),
-                                Text(habit.description),
+                                Text(
+                                  habit.description,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                                 const SizedBox(height: 8),
                                 Row(
                                   children: [
