@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:habit_tracker/habit_details_screen.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/utils/habit_schedule_utils.dart' as schedule_utils;
+import 'package:habit_tracker/utils/pause_utils.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 class HistoryScreen extends StatefulWidget {
@@ -14,20 +15,26 @@ class HistoryScreen extends StatefulWidget {
 class HistoryScreenState extends State<HistoryScreen> {
   late Box _habitBox;
   late Box _dailyLogBox;
+  late Box _settingsBox;
   List<Habit> _habits = [];
+  List<PausePeriod> _pausePeriods = [];
 
   @override
   void initState() {
     super.initState();
     _habitBox = Hive.box('habits');
     _dailyLogBox = Hive.box('dailyLogs');
+    _settingsBox = Hive.box(appSettingsBoxName);
     _loadHabits();
     _habitBox.listenable().addListener(_loadHabits);
+    _settingsBox.listenable().addListener(_loadPausePeriods);
+    _loadPausePeriods();
   }
 
   @override
   void dispose() {
     _habitBox.listenable().removeListener(_loadHabits);
+    _settingsBox.listenable().removeListener(_loadPausePeriods);
     super.dispose();
   }
 
@@ -44,6 +51,13 @@ class HistoryScreenState extends State<HistoryScreen> {
         return a.sortOrder.compareTo(b.sortOrder);
       });
     setState(() {});
+  }
+
+  void _loadPausePeriods() {
+    _pausePeriods = loadPausePeriods(_settingsBox);
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   String _formatDate(DateTime date) {
@@ -78,6 +92,7 @@ class HistoryScreenState extends State<HistoryScreen> {
         ? normalizedEndDate
         : today;
     final shouldExcludeToday = _isSameDate(statsEnd, today) &&
+        !isPausedOnDate(_pausePeriods, today) &&
         schedule_utils.isScheduledDay(habit, today) &&
         !_isHabitCompletedOnDate(habit, today);
     final effectiveStatsEnd = shouldExcludeToday
@@ -98,6 +113,10 @@ class HistoryScreenState extends State<HistoryScreen> {
     final normalizedStart = _normalizeDate(habit.startDate);
     DateTime date = statsEnd;
     while (!date.isBefore(normalizedStart)) {
+      if (isPausedOnDate(_pausePeriods, date)) {
+        date = date.subtract(const Duration(days: 1));
+        continue;
+      }
       if (!schedule_utils.isScheduledDay(habit, date)) {
         date = date.subtract(const Duration(days: 1));
         continue;
@@ -122,6 +141,10 @@ class HistoryScreenState extends State<HistoryScreen> {
     int totalScheduledDays = 0;
     DateTime date = start;
     while (!date.isAfter(end)) {
+      if (isPausedOnDate(_pausePeriods, date)) {
+        date = date.add(const Duration(days: 1));
+        continue;
+      }
       if (schedule_utils.isScheduledDay(habit, date)) {
         totalScheduledDays++;
         if (_isHabitCompletedOnDate(habit, date)) {

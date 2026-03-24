@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/utils/habit_schedule_utils.dart' as schedule_utils;
+import 'package:habit_tracker/utils/pause_utils.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:hive/hive.dart';
 
@@ -15,7 +16,10 @@ class HabitDetailsScreen extends StatefulWidget {
 
 class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
   late Box _dailyLogBox;
+  late Box _settingsBox;
   Map<DateTime, List<DailyLog>> _completedEvents = {};
+  Map<DateTime, List<PausePeriod>> _pausedEvents = {};
+  List<PausePeriod> _pausePeriods = [];
   double _successRate = 0.0;
   int _completedDays = 0;
   int _totalDays = 0;
@@ -27,6 +31,7 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
   void initState() {
     super.initState();
     _dailyLogBox = Hive.box('dailyLogs');
+    _settingsBox = Hive.box(appSettingsBoxName);
     _loadLogs();
   }
 
@@ -67,6 +72,7 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
     final isTodayCompleted = logByDate[todayKey]?.completed ?? false;
     final shouldExcludeToday =
         _isSameDate(statsEnd, today) &&
+        !isPausedOnDate(_pausePeriods, today) &&
         schedule_utils.isScheduledDay(widget.habit, today) &&
         !isTodayCompleted;
     final effectiveStatsEnd = shouldExcludeToday
@@ -80,10 +86,12 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
 
   void _loadLogs() {
     final start = _normalizeDate(widget.habit.startDate);
+    _pausePeriods = loadPausePeriods(_settingsBox);
     final logs = _dailyLogBox.values
         .map((e) => DailyLog.fromMap(Map<String, dynamic>.from(e as Map)))
         .where((log) => log.habitId == widget.habit.id);
     _completedEvents = {};
+    _pausedEvents = {};
     _completedDays = 0;
     final logByDate = <String, DailyLog>{};
     for (final log in logs) {
@@ -94,6 +102,14 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
           _completedEvents[normalizedLogDate] = [];
         }
         _completedEvents[normalizedLogDate]!.add(log);
+      }
+    }
+    for (final period in _pausePeriods) {
+      DateTime day = _normalizeDate(period.startDate);
+      final normalizedEnd = _normalizeDate(period.endDate);
+      while (!day.isAfter(normalizedEnd)) {
+        _pausedEvents.putIfAbsent(day, () => []).add(period);
+        day = day.add(const Duration(days: 1));
       }
     }
     final statsEnd = _getStatsEndDate(logByDate);
@@ -110,6 +126,10 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
     _totalDays = 0;
     _completedDays = 0;
     while (!date.isAfter(statsEnd)) {
+      if (isPausedOnDate(_pausePeriods, date)) {
+        date = date.add(const Duration(days: 1));
+        continue;
+      }
       if (schedule_utils.isScheduledDay(widget.habit, date)) {
         _totalDays++;
         final key = _formatDate(date);
@@ -134,6 +154,10 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
     final start = _normalizeDate(widget.habit.startDate);
     DateTime date = _normalizeDate(effectiveToday);
     while (!date.isBefore(start)) {
+      if (isPausedOnDate(_pausePeriods, date)) {
+        date = date.subtract(const Duration(days: 1));
+        continue;
+      }
       if (!schedule_utils.isScheduledDay(widget.habit, date)) {
         date = date.subtract(const Duration(days: 1));
         continue;
@@ -159,6 +183,10 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
     DateTime date = _normalizeDate(widget.habit.startDate);
     final end = _normalizeDate(effectiveToday);
     while (!date.isAfter(end)) {
+      if (isPausedOnDate(_pausePeriods, date)) {
+        date = date.add(const Duration(days: 1));
+        continue;
+      }
       if (!schedule_utils.isScheduledDay(widget.habit, date)) {
         date = date.add(const Duration(days: 1));
         continue;
@@ -243,17 +271,52 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
               ),
               calendarBuilders: CalendarBuilders(
                 markerBuilder: (context, day, events) {
-                  if (events.isEmpty) {
+                  final normalizedDay = _normalizeDate(day);
+                  if (events.isEmpty && (_pausedEvents[normalizedDay]?.isEmpty ?? true)) {
                     return const SizedBox.shrink();
                   }
                   return Align(
                     alignment: Alignment.bottomCenter,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_pausedEvents[normalizedDay]?.isNotEmpty ?? false)
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: Colors.orange,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        if ((_pausedEvents[normalizedDay]?.isNotEmpty ?? false) &&
+                            events.isNotEmpty)
+                          const SizedBox(width: 4),
+                        if (events.isNotEmpty)
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              color: widget.habit.color,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                },
+                defaultBuilder: (context, day, focusedDay) {
+                  final normalizedDay = _normalizeDate(day);
+                  if (!(_pausedEvents[normalizedDay]?.isNotEmpty ?? false)) {
+                    return null;
+                  }
+                  return Center(
                     child: Container(
-                      width: 6,
-                      height: 6,
+                      width: 32,
+                      height: 32,
                       decoration: BoxDecoration(
-                        color: widget.habit.color,
                         shape: BoxShape.circle,
+                        border: Border.all(color: Colors.orange.shade300),
                       ),
                     ),
                   );
@@ -277,6 +340,21 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
                 ),
                 const SizedBox(width: 8),
                 const Text('Completed day'),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: Colors.orange,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text('Paused day'),
               ],
             ),
           ],

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:habit_tracker/today_screen.dart';
+import 'package:habit_tracker/utils/pause_utils.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 void main() async {
@@ -9,6 +10,7 @@ void main() async {
   await Future.wait([
     Hive.openBox('habits'),
     Hive.openBox('dailyLogs'),
+    Hive.openBox(appSettingsBoxName),
   ]);
 
   runApp(const MyApp());

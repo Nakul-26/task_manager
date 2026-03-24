@@ -4,6 +4,31 @@ enum HabitType { binary, counted }
 
 enum Frequency { daily, weekly, oddDays, evenDays }
 
+class PausePeriod {
+  late DateTime startDate;
+  late DateTime endDate;
+
+  PausePeriod({
+    required DateTime startDate,
+    required DateTime endDate,
+  }) : startDate = DateTime(startDate.year, startDate.month, startDate.day),
+       endDate = DateTime(endDate.year, endDate.month, endDate.day);
+
+  Map<String, dynamic> toMap() {
+    return {
+      'startDate': startDate.toIso8601String(),
+      'endDate': endDate.toIso8601String(),
+    };
+  }
+
+  factory PausePeriod.fromMap(Map<String, dynamic> map) {
+    return PausePeriod(
+      startDate: DateTime.parse(map['startDate']),
+      endDate: DateTime.parse(map['endDate']),
+    );
+  }
+}
+
 class Habit {
   late String id;
   late String name;

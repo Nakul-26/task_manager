@@ -5,7 +5,9 @@ import 'package:habit_tracker/history_screen.dart';
 import 'package:habit_tracker/habit_details_screen.dart';
 import 'package:habit_tracker/manage_habits_screen.dart';
 import 'package:habit_tracker/models.dart';
+import 'package:habit_tracker/reminder_service.dart';
 import 'package:habit_tracker/utils/habit_schedule_utils.dart' as schedule_utils;
+import 'package:habit_tracker/utils/pause_utils.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 class TodayScreen extends StatefulWidget {
@@ -18,21 +20,27 @@ class TodayScreen extends StatefulWidget {
 class _TodayScreenState extends State<TodayScreen> {
   late Box _habitBox;
   late Box _dailyLogBox;
+  late Box _settingsBox;
   List<Habit> _habits = [];
   Map<String, DailyLog> _dailyCompletionStatus = {};
+  List<PausePeriod> _pausePeriods = [];
 
   @override
   void initState() {
     super.initState();
     _habitBox = Hive.box('habits');
     _dailyLogBox = Hive.box('dailyLogs');
+    _settingsBox = Hive.box(appSettingsBoxName);
     _loadHabits();
     _habitBox.listenable().addListener(_loadHabits);
+    _settingsBox.listenable().addListener(_loadPausePeriods);
+    _loadPausePeriods();
   }
 
   @override
   void dispose() {
     _habitBox.listenable().removeListener(_loadHabits);
+    _settingsBox.listenable().removeListener(_loadPausePeriods);
     super.dispose();
   }
 
@@ -66,6 +74,13 @@ class _TodayScreenState extends State<TodayScreen> {
       });
 
     _checkDailyReset();
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _loadPausePeriods() {
+    _pausePeriods = loadPausePeriods(_settingsBox);
     if (mounted) {
       setState(() {});
     }
@@ -120,6 +135,9 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   Future<void> _toggleHabitCompletion(Habit habit, bool? newValue) async {
+    if (_isTodayPaused()) {
+      return;
+    }
     String today = _formatDate(DateTime.now());
     DailyLog log =
         _dailyCompletionStatus[habit.id] ?? DailyLog(date: today, habitId: habit.id);
@@ -131,6 +149,9 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   Future<void> _incrementHabitCount(Habit habit) async {
+    if (_isTodayPaused()) {
+      return;
+    }
     String today = _formatDate(DateTime.now());
     DailyLog log =
         _dailyCompletionStatus[habit.id] ?? DailyLog(date: today, habitId: habit.id);
@@ -145,6 +166,9 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   Future<void> _decrementHabitCount(Habit habit) async {
+    if (_isTodayPaused()) {
+      return;
+    }
     String today = _formatDate(DateTime.now());
     DailyLog log =
         _dailyCompletionStatus[habit.id] ?? DailyLog(date: today, habitId: habit.id);
@@ -211,6 +235,7 @@ class _TodayScreenState extends State<TodayScreen> {
         ? normalizedEndDate
         : today;
     final shouldExcludeToday = _isSameDate(statsEnd, today) &&
+        !_isPaused(today) &&
         schedule_utils.isScheduledDay(habit, today) &&
         !_isHabitCompletedOnDate(habit, today);
     final effectiveStatsEnd = shouldExcludeToday
@@ -243,6 +268,10 @@ class _TodayScreenState extends State<TodayScreen> {
     final normalizedStart = _normalizeDate(habit.startDate);
     DateTime date = statsEnd;
     while (!date.isBefore(normalizedStart)) {
+      if (_isPaused(date)) {
+        date = date.subtract(const Duration(days: 1));
+        continue;
+      }
       if (!schedule_utils.isScheduledDay(habit, date)) {
         date = date.subtract(const Duration(days: 1));
         continue;
@@ -267,6 +296,10 @@ class _TodayScreenState extends State<TodayScreen> {
     int totalScheduledDays = 0;
     DateTime date = start;
     while (!date.isAfter(end)) {
+      if (_isPaused(date)) {
+        date = date.add(const Duration(days: 1));
+        continue;
+      }
       if (schedule_utils.isScheduledDay(habit, date)) {
         totalScheduledDays++;
         if (_isHabitCompletedOnDate(habit, date)) {
@@ -280,12 +313,160 @@ class _TodayScreenState extends State<TodayScreen> {
         : 0;
   }
 
+  bool _isPaused(DateTime date) => isPausedOnDate(_pausePeriods, date);
+
+  bool _isTodayPaused() => _isPaused(_normalizeDate(DateTime.now()));
+
+  PausePeriod? _getActivePausePeriod() =>
+      getActivePausePeriod(_pausePeriods, today: DateTime.now());
+
+  String _formatHumanDate(BuildContext context, DateTime date) {
+    return MaterialLocalizations.of(
+      context,
+    ).formatMediumDate(_normalizeDate(date));
+  }
+
+  Future<void> _openPauseDialog() async {
+    final today = _normalizeDate(DateTime.now());
+    final initialStart = today;
+    final initialEnd = _getActivePausePeriod()?.endDate ?? today;
+    DateTime startDate = initialStart;
+    DateTime endDate = initialEnd;
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> pickStartDate() async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: startDate,
+                firstDate: DateTime(today.year - 1),
+                lastDate: DateTime(today.year + 5),
+              );
+              if (picked == null) {
+                return;
+              }
+              setDialogState(() {
+                startDate = _normalizeDate(picked);
+                if (endDate.isBefore(startDate)) {
+                  endDate = startDate;
+                }
+              });
+            }
+
+            Future<void> pickEndDate() async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: endDate.isBefore(startDate) ? startDate : endDate,
+                firstDate: startDate,
+                lastDate: DateTime(today.year + 5),
+              );
+              if (picked == null) {
+                return;
+              }
+              setDialogState(() {
+                endDate = _normalizeDate(picked);
+              });
+            }
+
+            return AlertDialog(
+              title: const Text('Pause Tracking'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Start date'),
+                    subtitle: Text(_formatHumanDate(context, startDate)),
+                    trailing: const Icon(Icons.calendar_today),
+                    onTap: pickStartDate,
+                  ),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('End date'),
+                    subtitle: Text(_formatHumanDate(context, endDate)),
+                    trailing: const Icon(Icons.calendar_today),
+                    onTap: pickEndDate,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    final updatedPeriods = List<PausePeriod>.from(_pausePeriods)
+                      ..add(
+                        PausePeriod(startDate: startDate, endDate: endDate),
+                      )
+                      ..sort((a, b) => a.startDate.compareTo(b.startDate));
+                    await savePausePeriods(_settingsBox, updatedPeriods);
+                    await ReminderService.instance.syncAllHabitReminders(_habitBox);
+                    await _loadHabits();
+                    if (!dialogContext.mounted) {
+                      return;
+                    }
+                    Navigator.of(dialogContext).pop(true);
+                  },
+                  child: const Text('Pause'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (!mounted || saved != true) {
+      return;
+    }
+
+    final activePause = _getActivePausePeriod();
+    if (activePause != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Tracking paused until ${_formatHumanDate(context, activePause.endDate)}.',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _clearActivePause() async {
+    final activePause = _getActivePausePeriod();
+    if (activePause == null) {
+      return;
+    }
+    final updatedPeriods = _pausePeriods.where((period) {
+      return period.startDate != activePause.startDate ||
+          period.endDate != activePause.endDate;
+    }).toList();
+    await savePausePeriods(_settingsBox, updatedPeriods);
+    await ReminderService.instance.syncAllHabitReminders(_habitBox);
+    await _loadHabits();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isTodayPaused = _isTodayPaused();
+    final activePause = _getActivePausePeriod();
     return Scaffold(
       appBar: AppBar(
         title: const Text('Today\'s Habits'),
         actions: [
+          IconButton(
+            icon: Icon(
+              isTodayPaused ? Icons.pause_circle_filled : Icons.pause_circle_outline,
+            ),
+            tooltip: 'Pause tracking',
+            onPressed: _openPauseDialog,
+          ),
           IconButton(
             icon: const Icon(Icons.history),
             tooltip: 'History',
@@ -297,118 +478,168 @@ class _TodayScreenState extends State<TodayScreen> {
           ),
         ],
       ),
-      body: ListView.builder(
-        itemCount: _habits.length,
-        itemBuilder: (context, index) {
-          final habit = _habits[index];
-          final log = _dailyCompletionStatus[habit.id]!;
-          return GestureDetector(
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => HabitDetailsScreen(habit: habit),
-                ),
-              );
-            },
-            child: Card(
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 10,
-                      height: 50,
-                      color: habit.color,
+      body: Column(
+        children: [
+          if (activePause != null)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.pause_circle, color: Colors.orange),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      isTodayPaused
+                          ? 'Tracking paused until ${_formatHumanDate(context, activePause.endDate)}'
+                          : 'Upcoming pause: ${_formatHumanDate(context, activePause.startDate)} to ${_formatHumanDate(context, activePause.endDate)}',
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  habit.name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                              if (habit.isImportant) ...[
-                                const SizedBox(width: 8),
-                                const Icon(
-                                  Icons.star,
-                                  color: Colors.amber,
-                                  size: 20,
-                                ),
-                              ],
-                            ],
-                          ),
-                          Text(
-                            habit.description,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Text('Streak: ${_getStreak(habit)}'),
-                              const SizedBox(width: 16),
-                              Text(
-                                'Success: ${_getSuccessRate(habit).toStringAsFixed(2)}%',
-                              ),
-                            ],
-                          ),
-                          if ((habit.timerMinutes ?? 0) > 0) ...[
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                const Icon(Icons.timer_outlined, size: 18),
-                                const SizedBox(width: 4),
-                                Text(_formatTimerLabel(habit.timerMinutes!)),
-                                const SizedBox(width: 12),
-                                TextButton(
-                                  onPressed: () => _startHabitTimer(habit),
-                                  child: const Text('Start Timer'),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ],
-                      ),
+                  ),
+                  if (isTodayPaused)
+                    TextButton(
+                      onPressed: _clearActivePause,
+                      child: const Text('Resume'),
                     ),
-                    if (habit.type == HabitType.binary)
-                      Checkbox(
-                        value: log.completed,
-                        onChanged: (value) {
-                          _toggleHabitCompletion(habit, value);
-                        },
-                      ),
-                    if (habit.type == HabitType.counted)
-                      Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.remove),
-                            onPressed: () => _decrementHabitCount(habit),
-                          ),
-                          Text('${log.count ?? 0} / ${habit.timesPerDay ?? ''}'),
-                          IconButton(
-                            icon: const Icon(Icons.add),
-                            onPressed: () => _incrementHabitCount(habit),
-                          ),
-                        ],
-                      ),
-                  ],
-                ),
+                ],
               ),
             ),
-          );
-        },
+          Expanded(
+            child: ListView.builder(
+              itemCount: _habits.length,
+              itemBuilder: (context, index) {
+                final habit = _habits[index];
+                final log = _dailyCompletionStatus[habit.id]!;
+                return GestureDetector(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => HabitDetailsScreen(habit: habit),
+                      ),
+                    );
+                  },
+                  child: Opacity(
+                    opacity: isTodayPaused ? 0.65 : 1,
+                    child: Card(
+                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 10,
+                              height: 50,
+                              color: habit.color,
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          habit.name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                      if (habit.isImportant) ...[
+                                        const SizedBox(width: 8),
+                                        const Icon(
+                                          Icons.star,
+                                          color: Colors.amber,
+                                          size: 20,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  Text(
+                                    habit.description,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Text('Streak: ${_getStreak(habit)}'),
+                                      const SizedBox(width: 16),
+                                      Text(
+                                        'Success: ${_getSuccessRate(habit).toStringAsFixed(2)}%',
+                                      ),
+                                    ],
+                                  ),
+                                  if (isTodayPaused) ...[
+                                    const SizedBox(height: 8),
+                                    const Text('Tracking paused today'),
+                                  ],
+                                  if ((habit.timerMinutes ?? 0) > 0) ...[
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.timer_outlined, size: 18),
+                                        const SizedBox(width: 4),
+                                        Text(_formatTimerLabel(habit.timerMinutes!)),
+                                        const SizedBox(width: 12),
+                                        TextButton(
+                                          onPressed: isTodayPaused
+                                              ? null
+                                              : () => _startHabitTimer(habit),
+                                          child: const Text('Start Timer'),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            if (habit.type == HabitType.binary)
+                              Checkbox(
+                                value: log.completed,
+                                onChanged: isTodayPaused
+                                    ? null
+                                    : (value) {
+                                        _toggleHabitCompletion(habit, value);
+                                      },
+                              ),
+                            if (habit.type == HabitType.counted)
+                              Row(
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.remove),
+                                    onPressed: isTodayPaused
+                                        ? null
+                                        : () => _decrementHabitCount(habit),
+                                  ),
+                                  Text('${log.count ?? 0} / ${habit.timesPerDay ?? ''}'),
+                                  IconButton(
+                                    icon: const Icon(Icons.add),
+                                    onPressed: isTodayPaused
+                                        ? null
+                                        : () => _incrementHabitCount(habit),
+                                  ),
+                                ],
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

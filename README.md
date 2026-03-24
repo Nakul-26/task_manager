@@ -103,6 +103,13 @@ Offline-first Flutter app for tracking habits with reminders, progress, and hist
 ## Notes
 - History is available from the Today screen app bar (history icon) and groups logs by date.
 
+
+## Test
+```bash
+flutter analyse
+flutter test
+```
+
 ## Run
 ```bash
 flutter pub get

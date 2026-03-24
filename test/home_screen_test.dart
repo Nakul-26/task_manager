@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:habit_tracker/main.dart';
 import 'package:habit_tracker/models.dart';
+import 'package:habit_tracker/utils/pause_utils.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:io';
 
@@ -24,12 +25,14 @@ void main() {
     Hive.init(tempDir.path);
     await Hive.openBox('habits');
     await Hive.openBox('dailyLogs');
+    await Hive.openBox(appSettingsBoxName);
   });
 
   // Clear boxes before each test
   setUp(() {
     Hive.box('habits').clear();
     Hive.box('dailyLogs').clear();
+    Hive.box(appSettingsBoxName).clear();
   });
 
   tearDownAll(() async {
@@ -100,5 +103,30 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Archived Habit'), findsNothing);
+  });
+
+  testWidgets('Paused today shows banner and disables completion', (
+    WidgetTester tester,
+  ) async {
+    final today = DateTime.now();
+    final habit = Habit(
+      id: '3',
+      name: 'Paused Habit',
+      description: 'Should be disabled while paused',
+      createdAt: today,
+    );
+    await Hive.box('habits').put(habit.id, habit.toMap());
+    await Hive.box(appSettingsBoxName).put(pausePeriodsKey, [
+      PausePeriod(startDate: today, endDate: today).toMap(),
+    ]);
+
+    await tester.pumpWidget(const MyApp());
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Tracking paused until'), findsOneWidget);
+
+    final checkbox = tester.widget<Checkbox>(find.byType(Checkbox));
+    expect(checkbox.onChanged, isNull);
+    expect(find.text('Tracking paused today'), findsOneWidget);
   });
 }

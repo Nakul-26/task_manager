@@ -46,4 +46,17 @@ void main() {
     expect(habit.isImportant, true);
     expect(habit.importanceScore, 1);
   });
+
+  test('PausePeriod should convert to and from Map', () {
+    final period = PausePeriod(
+      startDate: DateTime(2026, 3, 24, 9, 30),
+      endDate: DateTime(2026, 3, 29, 18, 0),
+    );
+
+    final map = period.toMap();
+    final newPeriod = PausePeriod.fromMap(map);
+
+    expect(newPeriod.startDate, DateTime(2026, 3, 24));
+    expect(newPeriod.endDate, DateTime(2026, 3, 29));
+  });
 }

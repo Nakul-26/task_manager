@@ -2,6 +2,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:hive/hive.dart';
 import 'package:habit_tracker/models.dart';
+import 'package:habit_tracker/utils/pause_utils.dart';
+import 'package:habit_tracker/utils/habit_schedule_utils.dart' as schedule_utils;
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -107,7 +109,8 @@ class ReminderService {
   Future<void> _scheduleDaily(Habit habit) async {
     final now = tz.TZDateTime.now(tz.local);
     final start = _startDateTimeAtReminder(habit);
-    final earliest = start.isAfter(now) ? start : now;
+    final earliestCandidate = start.isAfter(now) ? start : now;
+    final earliest = _firstAllowedDateTimeOnOrAfter(earliestCandidate);
     final when = _nextTimeAtOrAfter(
       habit.reminderHour!,
       habit.reminderMinute!,
@@ -140,7 +143,8 @@ class ReminderService {
     final baseId = _baseNotificationId(habit.id);
     final now = tz.TZDateTime.now(tz.local);
     final start = _startDateTimeAtReminder(habit);
-    final earliest = start.isAfter(now) ? start : now;
+    final earliestCandidate = start.isAfter(now) ? start : now;
+    final earliest = _firstAllowedDateTimeOnOrAfter(earliestCandidate);
     for (final day in days) {
       final when = _nextWeekdayTime(
         day,
@@ -188,7 +192,8 @@ class ReminderService {
           habit.reminderHour!,
           habit.reminderMinute!,
         );
-        if (localDateTime.isAfter(now)) {
+        if (localDateTime.isAfter(now) &&
+            !_isPausedOnDate(DateTime(day.year, day.month, day.day))) {
           final when = tz.TZDateTime.from(localDateTime, tz.local);
           await _notifications.zonedSchedule(
             baseId + slot,
@@ -234,6 +239,17 @@ class ReminderService {
     if (!scheduled.isAfter(earliest)) {
       scheduled = scheduled.add(const Duration(days: 1));
     }
+    while (_isPausedOnDate(scheduled)) {
+      scheduled = scheduled.add(const Duration(days: 1));
+      scheduled = tz.TZDateTime(
+        tz.local,
+        scheduled.year,
+        scheduled.month,
+        scheduled.day,
+        hour,
+        minute,
+      );
+    }
     return scheduled;
   }
 
@@ -254,7 +270,50 @@ class ReminderService {
     while (scheduled.weekday != weekday || !scheduled.isAfter(earliest)) {
       scheduled = scheduled.add(const Duration(days: 1));
     }
+    while (_isPausedOnDate(scheduled)) {
+      scheduled = scheduled.add(const Duration(days: 1));
+      while (scheduled.weekday != weekday) {
+        scheduled = scheduled.add(const Duration(days: 1));
+      }
+      scheduled = tz.TZDateTime(
+        tz.local,
+        scheduled.year,
+        scheduled.month,
+        scheduled.day,
+        hour,
+        minute,
+      );
+    }
     return scheduled;
+  }
+
+  bool _isPausedOnDate(DateTime date) {
+    final settingsBox = Hive.box<dynamic>(appSettingsBoxName);
+    final pausePeriods = loadPausePeriods(settingsBox);
+    return isPausedOnDate(pausePeriods, date);
+  }
+
+  tz.TZDateTime _firstAllowedDateTimeOnOrAfter(tz.TZDateTime dateTime) {
+    var candidate = tz.TZDateTime(
+      tz.local,
+      dateTime.year,
+      dateTime.month,
+      dateTime.day,
+      dateTime.hour,
+      dateTime.minute,
+    );
+    while (_isPausedOnDate(schedule_utils.normalizeDate(candidate))) {
+      final nextDay = candidate.add(const Duration(days: 1));
+      candidate = tz.TZDateTime(
+        tz.local,
+        nextDay.year,
+        nextDay.month,
+        nextDay.day,
+        dateTime.hour,
+        dateTime.minute,
+      );
+    }
+    return candidate;
   }
 
   NotificationDetails _details() {
