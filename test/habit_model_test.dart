@@ -51,6 +51,7 @@ void main() {
     final period = PausePeriod(
       startDate: DateTime(2026, 3, 24, 9, 30),
       endDate: DateTime(2026, 3, 29, 18, 0),
+      description: 'Exam prep',
     );
 
     final map = period.toMap();
@@ -58,5 +59,6 @@ void main() {
 
     expect(newPeriod.startDate, DateTime(2026, 3, 24));
     expect(newPeriod.endDate, DateTime(2026, 3, 29));
+    expect(newPeriod.description, 'Exam prep');
   });
 }

@@ -7,10 +7,12 @@ enum Frequency { daily, weekly, oddDays, evenDays }
 class PausePeriod {
   late DateTime startDate;
   late DateTime endDate;
+  late String description;
 
   PausePeriod({
     required DateTime startDate,
     required DateTime endDate,
+    this.description = '',
   }) : startDate = DateTime(startDate.year, startDate.month, startDate.day),
        endDate = DateTime(endDate.year, endDate.month, endDate.day);
 
@@ -18,6 +20,7 @@ class PausePeriod {
     return {
       'startDate': startDate.toIso8601String(),
       'endDate': endDate.toIso8601String(),
+      'description': description,
     };
   }
 
@@ -25,6 +28,7 @@ class PausePeriod {
     return PausePeriod(
       startDate: DateTime.parse(map['startDate']),
       endDate: DateTime.parse(map['endDate']),
+      description: map['description'] ?? '',
     );
   }
 }

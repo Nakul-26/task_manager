@@ -320,6 +320,16 @@ class _TodayScreenState extends State<TodayScreen> {
   PausePeriod? _getActivePausePeriod() =>
       getActivePausePeriod(_pausePeriods, today: DateTime.now());
 
+  PausePeriod? _getNextPausePeriod() {
+    final today = _normalizeDate(DateTime.now());
+    for (final period in _pausePeriods) {
+      if (_normalizeDate(period.startDate).isAfter(today)) {
+        return period;
+      }
+    }
+    return null;
+  }
+
   String _formatHumanDate(BuildContext context, DateTime date) {
     return MaterialLocalizations.of(
       context,
@@ -332,8 +342,9 @@ class _TodayScreenState extends State<TodayScreen> {
     final initialEnd = _getActivePausePeriod()?.endDate ?? today;
     DateTime startDate = initialStart;
     DateTime endDate = initialEnd;
+    final descriptionController = TextEditingController();
 
-    final saved = await showDialog<bool>(
+    final newPause = await showDialog<PausePeriod>(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
@@ -391,27 +402,30 @@ class _TodayScreenState extends State<TodayScreen> {
                     trailing: const Icon(Icons.calendar_today),
                     onTap: pickEndDate,
                   ),
+                  TextField(
+                    controller: descriptionController,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Reason',
+                      hintText: 'Exams, travel, vacation, recovery...',
+                    ),
+                  ),
                 ],
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  onPressed: () => Navigator.of(dialogContext).pop(),
                   child: const Text('Cancel'),
                 ),
                 TextButton(
-                  onPressed: () async {
-                    final updatedPeriods = List<PausePeriod>.from(_pausePeriods)
-                      ..add(
-                        PausePeriod(startDate: startDate, endDate: endDate),
-                      )
-                      ..sort((a, b) => a.startDate.compareTo(b.startDate));
-                    await savePausePeriods(_settingsBox, updatedPeriods);
-                    await ReminderService.instance.syncAllHabitReminders(_habitBox);
-                    await _loadHabits();
-                    if (!dialogContext.mounted) {
-                      return;
-                    }
-                    Navigator.of(dialogContext).pop(true);
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop(
+                      PausePeriod(
+                        startDate: startDate,
+                        endDate: endDate,
+                        description: descriptionController.text.trim(),
+                      ),
+                    );
                   },
                   child: const Text('Pause'),
                 ),
@@ -421,17 +435,28 @@ class _TodayScreenState extends State<TodayScreen> {
         );
       },
     );
+    descriptionController.dispose();
 
-    if (!mounted || saved != true) {
+    if (!mounted || newPause == null) {
       return;
     }
 
+    final updatedPeriods = List<PausePeriod>.from(_pausePeriods)
+      ..add(newPause)
+      ..sort((a, b) => a.startDate.compareTo(b.startDate));
+    await savePausePeriods(_settingsBox, updatedPeriods);
+    await ReminderService.instance.syncAllHabitReminders(_habitBox);
+    await _loadHabits();
+
     final activePause = _getActivePausePeriod();
     if (activePause != null) {
+      final pauseReason = activePause.description.trim();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Tracking paused until ${_formatHumanDate(context, activePause.endDate)}.',
+            pauseReason.isEmpty
+                ? 'Tracking paused until ${_formatHumanDate(context, activePause.endDate)}.'
+                : 'Tracking paused until ${_formatHumanDate(context, activePause.endDate)}: $pauseReason',
           ),
         ),
       );
@@ -456,6 +481,7 @@ class _TodayScreenState extends State<TodayScreen> {
   Widget build(BuildContext context) {
     final isTodayPaused = _isTodayPaused();
     final activePause = _getActivePausePeriod();
+    final nextPause = activePause ?? _getNextPausePeriod();
     return Scaffold(
       appBar: AppBar(
         title: const Text('Today\'s Habits'),
@@ -480,7 +506,7 @@ class _TodayScreenState extends State<TodayScreen> {
       ),
       body: Column(
         children: [
-          if (activePause != null)
+          if (nextPause != null)
             Container(
               width: double.infinity,
               margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -497,8 +523,8 @@ class _TodayScreenState extends State<TodayScreen> {
                   Expanded(
                     child: Text(
                       isTodayPaused
-                          ? 'Tracking paused until ${_formatHumanDate(context, activePause.endDate)}'
-                          : 'Upcoming pause: ${_formatHumanDate(context, activePause.startDate)} to ${_formatHumanDate(context, activePause.endDate)}',
+                          ? 'Tracking paused until ${_formatHumanDate(context, nextPause.endDate)}${nextPause.description.trim().isEmpty ? '' : ' • ${nextPause.description.trim()}'}'
+                          : 'Upcoming pause: ${_formatHumanDate(context, nextPause.startDate)} to ${_formatHumanDate(context, nextPause.endDate)}${nextPause.description.trim().isEmpty ? '' : ' • ${nextPause.description.trim()}'}',
                     ),
                   ),
                   if (isTodayPaused)
