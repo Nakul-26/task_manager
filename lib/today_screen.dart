@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:habit_tracker/history_screen.dart';
@@ -9,6 +10,11 @@ import 'package:habit_tracker/reminder_service.dart';
 import 'package:habit_tracker/utils/habit_schedule_utils.dart' as schedule_utils;
 import 'package:habit_tracker/utils/pause_utils.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+
+const String _priorityXpKey = 'priorityXp';
+const String _priorityEmergencyUnlockKey = 'priorityEmergencyUnlockDate';
+const double _priorityUnlockThreshold = 0.75;
+const int _todayFocusTarget = 3;
 
 class TodayScreen extends StatefulWidget {
   const TodayScreen({super.key});
@@ -24,6 +30,8 @@ class _TodayScreenState extends State<TodayScreen> {
   List<Habit> _habits = [];
   Map<String, DailyLog> _dailyCompletionStatus = {};
   List<PausePeriod> _pausePeriods = [];
+  int _totalXp = 0;
+  DateTime? _emergencyUnlockDate;
 
   @override
   void initState() {
@@ -31,6 +39,7 @@ class _TodayScreenState extends State<TodayScreen> {
     _habitBox = Hive.box('habits');
     _dailyLogBox = Hive.box('dailyLogs');
     _settingsBox = Hive.box(appSettingsBoxName);
+    _loadPriorityMetadata();
     _loadHabits();
     _habitBox.listenable().addListener(_loadHabits);
     _settingsBox.listenable().addListener(_loadPausePeriods);
@@ -85,6 +94,47 @@ class _TodayScreenState extends State<TodayScreen> {
       setState(() {});
     }
   }
+
+  void _loadPriorityMetadata() {
+    _totalXp = (_settingsBox.get(_priorityXpKey) as int?) ?? 0;
+    final rawUnlock = _settingsBox.get(_priorityEmergencyUnlockKey) as String?;
+    _emergencyUnlockDate = _parseStoredDate(rawUnlock);
+  }
+
+  Future<void> _activateEmergencyUnlock() async {
+    final normalized = _normalizeDate(DateTime.now());
+    await _settingsBox.put(
+      _priorityEmergencyUnlockKey,
+      normalized.toIso8601String(),
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _emergencyUnlockDate = normalized;
+    });
+  }
+
+  DateTime? _parseStoredDate(String? raw) {
+    if (raw == null || raw.isEmpty) {
+      return null;
+    }
+    try {
+      return DateTime.parse(raw);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool get _isEmergencyUnlockActive {
+    final stored = _emergencyUnlockDate;
+    if (stored == null) {
+      return false;
+    }
+    return _isSameDate(stored, DateTime.now());
+  }
+
+  bool get _canUseEmergencyUnlock => !_isEmergencyUnlockActive;
 
   void _ensureSortOrder(List<Habit> habits) {
     bool needsSave = false;
@@ -141,10 +191,16 @@ class _TodayScreenState extends State<TodayScreen> {
     String today = _formatDate(DateTime.now());
     DailyLog log =
         _dailyCompletionStatus[habit.id] ?? DailyLog(date: today, habitId: habit.id);
+    final wasCompleted = log.completed;
     log.completed = newValue ?? false;
     await _dailyLogBox.put('${habit.id}_$today', log.toMap());
+    final updatedXp =
+        await _tryAwardXpForCompletion(habit, wasCompleted, log.completed);
     setState(() {
       _dailyCompletionStatus[habit.id] = log;
+      if (updatedXp != null) {
+        _totalXp = updatedXp;
+      }
     });
   }
 
@@ -156,12 +212,18 @@ class _TodayScreenState extends State<TodayScreen> {
     DailyLog log =
         _dailyCompletionStatus[habit.id] ?? DailyLog(date: today, habitId: habit.id);
     log.count = (log.count ?? 0) + 1;
+    final wasCompleted = log.completed;
     if (habit.timesPerDay != null && log.count! >= habit.timesPerDay!) {
       log.completed = true;
     }
     await _dailyLogBox.put('${habit.id}_$today', log.toMap());
+    final updatedXp =
+        await _tryAwardXpForCompletion(habit, wasCompleted, log.completed);
     setState(() {
       _dailyCompletionStatus[habit.id] = log;
+      if (updatedXp != null) {
+        _totalXp = updatedXp;
+      }
     });
   }
 
@@ -173,13 +235,36 @@ class _TodayScreenState extends State<TodayScreen> {
     DailyLog log =
         _dailyCompletionStatus[habit.id] ?? DailyLog(date: today, habitId: habit.id);
     log.count = (log.count ?? 0) > 0 ? (log.count! - 1) : 0;
+    final wasCompleted = log.completed;
     if (habit.timesPerDay != null && log.count! < habit.timesPerDay!) {
       log.completed = false;
     }
     await _dailyLogBox.put('${habit.id}_$today', log.toMap());
+    final updatedXp =
+        await _tryAwardXpForCompletion(habit, wasCompleted, log.completed);
     setState(() {
       _dailyCompletionStatus[habit.id] = log;
+      if (updatedXp != null) {
+        _totalXp = updatedXp;
+      }
     });
+  }
+
+  Future<int?> _tryAwardXpForCompletion(
+    Habit habit,
+    bool wasCompleted,
+    bool isCompleted,
+  ) async {
+    if (wasCompleted || !isCompleted) {
+      return null;
+    }
+    final reward = habit.priorityLevel.xpReward;
+    if (reward <= 0) {
+      return null;
+    }
+    final nextTotal = _totalXp + reward;
+    await _settingsBox.put(_priorityXpKey, nextTotal);
+    return nextTotal;
   }
 
   Future<void> _startHabitTimer(Habit habit) async {
@@ -448,6 +533,10 @@ class _TodayScreenState extends State<TodayScreen> {
     await ReminderService.instance.syncAllHabitReminders(_habitBox);
     await _loadHabits();
 
+    if (!mounted) {
+      return;
+    }
+
     final activePause = _getActivePausePeriod();
     if (activePause != null) {
       final pauseReason = activePause.description.trim();
@@ -482,6 +571,24 @@ class _TodayScreenState extends State<TodayScreen> {
     final isTodayPaused = _isTodayPaused();
     final activePause = _getActivePausePeriod();
     final nextPause = activePause ?? _getNextPausePeriod();
+    final priorityGroups = _buildPriorityGroups();
+    final priorityStats = _buildPriorityStats(priorityGroups);
+    final coreStats = priorityStats[PriorityLevel.core]!;
+    final unlockBanners = _buildUnlockAnnouncements(priorityStats);
+    final levelSections = PriorityLevel.values.expand((level) {
+      final habits = priorityGroups[level]!;
+      final stats = priorityStats[level]!;
+      final unlocked = _isLevelUnlocked(level, priorityStats);
+      return _buildPriorityLevelWidgets(
+        level: level,
+        habits: habits,
+        stats: stats,
+        unlocked: unlocked,
+        isTodayPaused: isTodayPaused,
+        statsMap: priorityStats,
+      );
+    }).toList();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Today\'s Habits'),
@@ -504,171 +611,449 @@ class _TodayScreenState extends State<TodayScreen> {
           ),
         ],
       ),
-      body: Column(
+      body: ListView(
+        padding: const EdgeInsets.only(bottom: 24),
         children: [
-          if (nextPause != null)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.orange.shade200),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.pause_circle, color: Colors.orange),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      isTodayPaused
-                          ? 'Tracking paused until ${_formatHumanDate(context, nextPause.endDate)}${nextPause.description.trim().isEmpty ? '' : ' • ${nextPause.description.trim()}'}'
-                          : 'Upcoming pause: ${_formatHumanDate(context, nextPause.startDate)} to ${_formatHumanDate(context, nextPause.endDate)}${nextPause.description.trim().isEmpty ? '' : ' • ${nextPause.description.trim()}'}',
-                    ),
-                  ),
-                  if (isTodayPaused)
-                    TextButton(
-                      onPressed: _clearActivePause,
-                      child: const Text('Resume'),
-                    ),
-                ],
-              ),
+          if (nextPause != null) _buildPauseBanner(context, isTodayPaused, nextPause),
+          const SizedBox(height: 16),
+          _buildFocusCard(coreStats),
+          if (unlockBanners.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ...unlockBanners,
+          ],
+          const SizedBox(height: 8),
+          _buildXpCard(),
+          const SizedBox(height: 16),
+          ...levelSections,
+          const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPauseBanner(
+    BuildContext context,
+    bool isTodayPaused,
+    PausePeriod nextPause,
+  ) {
+    final description = nextPause.description.trim();
+    final suffix = description.isEmpty ? '' : ' • $description';
+    final message = isTodayPaused
+        ? 'Tracking paused until ${_formatHumanDate(context, nextPause.endDate)}$suffix'
+        : 'Upcoming pause: ${_formatHumanDate(context, nextPause.startDate)} to ${_formatHumanDate(context, nextPause.endDate)}$suffix';
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.pause_circle, color: Colors.orange),
+          const SizedBox(width: 12),
+          Expanded(child: Text(message)),
+          if (isTodayPaused)
+            TextButton(
+              onPressed: _clearActivePause,
+              child: const Text('Resume'),
             ),
-          Expanded(
-            child: ListView.builder(
-              itemCount: _habits.length,
-              itemBuilder: (context, index) {
-                final habit = _habits[index];
-                final log = _dailyCompletionStatus[habit.id]!;
-                return GestureDetector(
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => HabitDetailsScreen(habit: habit),
-                      ),
-                    );
-                  },
-                  child: Opacity(
-                    opacity: isTodayPaused ? 0.65 : 1,
-                    child: Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 10,
-                              height: 50,
-                              color: habit.color,
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          habit.name,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                      if (habit.isImportant) ...[
-                                        const SizedBox(width: 8),
-                                        const Icon(
-                                          Icons.star,
-                                          color: Colors.amber,
-                                          size: 20,
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                  Text(
-                                    habit.description,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      Text('Streak: ${_getStreak(habit)}'),
-                                      const SizedBox(width: 16),
-                                      Text(
-                                        'Success: ${_getSuccessRate(habit).toStringAsFixed(2)}%',
-                                      ),
-                                    ],
-                                  ),
-                                  if (isTodayPaused) ...[
-                                    const SizedBox(height: 8),
-                                    const Text('Tracking paused today'),
-                                  ],
-                                  if ((habit.timerMinutes ?? 0) > 0) ...[
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      children: [
-                                        const Icon(Icons.timer_outlined, size: 18),
-                                        const SizedBox(width: 4),
-                                        Text(_formatTimerLabel(habit.timerMinutes!)),
-                                        const SizedBox(width: 12),
-                                        TextButton(
-                                          onPressed: isTodayPaused
-                                              ? null
-                                              : () => _startHabitTimer(habit),
-                                          child: const Text('Start Timer'),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                            if (habit.type == HabitType.binary)
-                              Checkbox(
-                                value: log.completed,
-                                onChanged: isTodayPaused
-                                    ? null
-                                    : (value) {
-                                        _toggleHabitCompletion(habit, value);
-                                      },
-                              ),
-                            if (habit.type == HabitType.counted)
-                              Row(
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.remove),
-                                    onPressed: isTodayPaused
-                                        ? null
-                                        : () => _decrementHabitCount(habit),
-                                  ),
-                                  Text('${log.count ?? 0} / ${habit.timesPerDay ?? ''}'),
-                                  IconButton(
-                                    icon: const Icon(Icons.add),
-                                    onPressed: isTodayPaused
-                                        ? null
-                                        : () => _incrementHabitCount(habit),
-                                  ),
-                                ],
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFocusCard(_PriorityLevelStats coreStats) {
+    final target = math.min(coreStats.total, _todayFocusTarget);
+    final focusText = target == 0
+        ? 'Add a Core task to lock in today\'s focus.'
+        : 'Complete $target core tasks first (${coreStats.completed}/${coreStats.total} done).';
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              const Icon(Icons.track_changes, color: Colors.blue),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  focusText,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildUnlockAnnouncements(
+    Map<PriorityLevel, _PriorityLevelStats> stats,
+  ) {
+    final notifications = <Widget>[];
+    if ((stats[PriorityLevel.core]?.total ?? 0) > 0 &&
+        _isLevelUnlocked(PriorityLevel.secondary, stats)) {
+      notifications.add(_buildUnlockBanner('👉 Core tasks done — Side tasks unlocked'));
+    }
+    if ((stats[PriorityLevel.secondary]?.total ?? 0) > 0 &&
+        _isLevelUnlocked(PriorityLevel.optional, stats)) {
+      notifications
+          .add(_buildUnlockBanner('👉 Secondary tasks done — Optional tasks unlocked'));
+    }
+    return notifications;
+  }
+
+  Widget _buildUnlockBanner(String message) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.green.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.green.shade200),
+        ),
+        child: Text(
+          message,
+          style: TextStyle(
+            color: Colors.green.shade800,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildXpCard() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              const Icon(Icons.auto_graph, color: Colors.amber),
+              const SizedBox(width: 12),
+              const Text('XP points', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Spacer(),
+              Text(
+                '$_totalXp XP',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Map<PriorityLevel, List<Habit>> _buildPriorityGroups() {
+    final groups = <PriorityLevel, List<Habit>>{
+      for (final level in PriorityLevel.values) level: [],
+    };
+    for (final habit in _habits) {
+      groups[habit.priorityLevel]!.add(habit);
+    }
+    for (final list in groups.values) {
+      list.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    }
+    return groups;
+  }
+
+  Map<PriorityLevel, _PriorityLevelStats> _buildPriorityStats(
+    Map<PriorityLevel, List<Habit>> groups,
+  ) {
+    final stats = <PriorityLevel, _PriorityLevelStats>{};
+    groups.forEach((level, habits) {
+      final completed = habits.where((habit) {
+        return _dailyCompletionStatus[habit.id]?.completed == true;
+      }).length;
+      stats[level] = _PriorityLevelStats(habits.length, completed);
+    });
+    return stats;
+  }
+
+  bool _isLevelUnlocked(
+    PriorityLevel level,
+    Map<PriorityLevel, _PriorityLevelStats> stats,
+  ) {
+    if (level == PriorityLevel.core) {
+      return true;
+    }
+    if (_isEmergencyUnlockActive) {
+      return true;
+    }
+    final previousLevel = PriorityLevel.values[level.index - 1];
+    final previousStats = stats[previousLevel]!;
+    if (previousStats.total == 0) {
+      return true;
+    }
+    return previousStats.completed / previousStats.total >= _priorityUnlockThreshold;
+  }
+
+  List<Widget> _buildPriorityLevelWidgets({
+    required PriorityLevel level,
+    required List<Habit> habits,
+    required _PriorityLevelStats stats,
+    required bool unlocked,
+    required bool isTodayPaused,
+    required Map<PriorityLevel, _PriorityLevelStats> statsMap,
+  }) {
+    final widgets = <Widget>[];
+    widgets.add(_buildLevelHeader(level, stats, unlocked));
+    widgets.add(const SizedBox(height: 8));
+    if (!unlocked) {
+      final previousLevel = PriorityLevel.values[level.index - 1];
+      widgets.add(_buildLockedSection(level, previousLevel, statsMap[previousLevel]!));
+    } else if (habits.isEmpty) {
+      widgets.add(_buildEmptyLevelCard(level));
+    } else {
+      for (final habit in habits) {
+        final log = _dailyCompletionStatus[habit.id] ??
+            DailyLog(date: _formatDate(DateTime.now()), habitId: habit.id);
+        widgets.add(_buildHabitCard(habit, log, isTodayPaused));
+      }
+    }
+    return widgets;
+  }
+
+  Widget _buildLevelHeader(
+    PriorityLevel level,
+    _PriorityLevelStats stats,
+    bool unlocked,
+  ) {
+    final statusText = '${stats.completed}/${stats.total} done';
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: level.accentColor,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'LEVEL ${level.levelNumber} • ${level.displayName}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              if (!unlocked) ...[
+                const Icon(Icons.lock, size: 16, color: Colors.grey),
+                const SizedBox(width: 4),
+              ],
+              Text(
+                statusText,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: level.accentColor,
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
+
+  Widget _buildLockedSection(
+    PriorityLevel level,
+    PriorityLevel previousLevel,
+    _PriorityLevelStats previousStats,
+  ) {
+    final requirement = math.min(
+      previousStats.total,
+      (previousStats.total * _priorityUnlockThreshold).ceil(),
+    );
+    final progressPercent = previousStats.total == 0
+        ? '0'
+        : ((previousStats.completed / previousStats.total) * 100)
+            .clamp(0, 100)
+            .toStringAsFixed(0);
+    final message = previousStats.total == 0
+        ? 'Add ${previousLevel.displayName} tasks to unlock ${level.displayName} tasks.'
+        : 'Complete $requirement ${previousLevel.displayName} tasks ($progressPercent% done) to unlock this level.';
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Card(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(message),
+              const SizedBox(height: 8),
+              if (level == PriorityLevel.secondary) ...[
+                _canUseEmergencyUnlock
+                    ? TextButton(
+                        onPressed: _activateEmergencyUnlock,
+                        child: const Text('Emergency unlock (once per day)'),
+                      )
+                    : Text(
+                        'Emergency unlock used today.',
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyLevelCard(PriorityLevel level) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Card(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text('No ${level.displayName} tasks are scheduled for today.'),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHabitCard(Habit habit, DailyLog log, bool isTodayPaused) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => HabitDetailsScreen(habit: habit),
+          ),
+        );
+      },
+      child: Opacity(
+        opacity: isTodayPaused ? 0.65 : 1,
+        child: Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              children: [
+                Container(
+                  width: 10,
+                  height: 50,
+                  color: habit.color,
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              habit.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          if (habit.isImportant) ...[
+                            const SizedBox(width: 8),
+                            const Icon(
+                              Icons.star,
+                              color: Colors.amber,
+                              size: 20,
+                            ),
+                          ],
+                        ],
+                      ),
+                      Text(
+                        habit.description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Text('Streak: ${_getStreak(habit)}'),
+                          const SizedBox(width: 16),
+                          Text('Success: ${_getSuccessRate(habit).toStringAsFixed(2)}%'),
+                        ],
+                      ),
+                      if (isTodayPaused) ...[
+                        const SizedBox(height: 8),
+                        const Text('Tracking paused today'),
+                      ],
+                      if ((habit.timerMinutes ?? 0) > 0) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(Icons.timer_outlined, size: 18),
+                            const SizedBox(width: 4),
+                            Text(_formatTimerLabel(habit.timerMinutes!)),
+                            const SizedBox(width: 12),
+                            TextButton(
+                              onPressed: isTodayPaused ? null : () => _startHabitTimer(habit),
+                              child: const Text('Start Timer'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (habit.type == HabitType.binary)
+                  Checkbox(
+                    value: log.completed,
+                    onChanged: isTodayPaused ? null : (value) {
+                      _toggleHabitCompletion(habit, value);
+                    },
+                  ),
+                if (habit.type == HabitType.counted)
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.remove),
+                        onPressed: isTodayPaused ? null : () => _decrementHabitCount(habit),
+                      ),
+                      Text('${log.count ?? 0} / ${habit.timesPerDay ?? ''}'),
+                      IconButton(
+                        icon: const Icon(Icons.add),
+                        onPressed: isTodayPaused ? null : () => _incrementHabitCount(habit),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PriorityLevelStats {
+  final int total;
+  final int completed;
+
+  const _PriorityLevelStats(this.total, this.completed);
+
+  double get completionRate => total == 0 ? 1 : completed / total;
 }
 
 class _HabitTimerDialog extends StatefulWidget {

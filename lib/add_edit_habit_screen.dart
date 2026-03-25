@@ -24,6 +24,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
   int? _timerMinutes;
   List<int> _daysOfWeek = [];
   Color _color = Colors.blue;
+  PriorityLevel _priorityLevel = PriorityLevel.core;
   bool _isImportant = false;
   int _importanceScore = 0;
   bool _reminderEnabled = false;
@@ -56,6 +57,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
       _timerMinutes = widget.habit!.timerMinutes;
       _daysOfWeek = widget.habit!.daysOfWeek ?? [];
       _color = widget.habit!.color;
+      _priorityLevel = widget.habit!.priorityLevel;
       _isImportant = widget.habit!.isImportant;
       _importanceScore = widget.habit!.importanceScore;
       _startDate = _normalizeDate(widget.habit!.startDate);
@@ -146,6 +148,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
         reminderHour: _reminderTime?.hour,
         reminderMinute: _reminderTime?.minute,
         color: _color,
+        priorityLevel: _priorityLevel,
         createdAt: widget.habit?.createdAt ?? DateTime.now(),
         archivedAt: widget.habit?.archivedAt,
         sortOrder: sortOrder,
@@ -279,6 +282,28 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                 initialValue: _description,
                 decoration: const InputDecoration(labelText: 'Description'),
                 onSaved: (value) => _description = value ?? '',
+              ),
+              DropdownButtonFormField<PriorityLevel>(
+                value: _priorityLevel,
+                decoration: const InputDecoration(
+                  labelText: 'Priority Level',
+                  helperText:
+                      'Higher level tasks must be completed before lower ones appear.',
+                ),
+                items: PriorityLevel.values.map((level) {
+                  return DropdownMenuItem(
+                    value: level,
+                    child: Text('Level ${level.levelNumber} · ${level.displayName}'),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  if (value == null) {
+                    return;
+                  }
+                  setState(() {
+                    _priorityLevel = value;
+                  });
+                },
               ),
               SwitchListTile(
                 title: const Text('Important'),

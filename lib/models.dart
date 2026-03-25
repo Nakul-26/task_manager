@@ -4,6 +4,45 @@ enum HabitType { binary, counted }
 
 enum Frequency { daily, weekly, oddDays, evenDays }
 
+enum PriorityLevel { core, secondary, optional }
+
+extension PriorityLevelInfo on PriorityLevel {
+  String get displayName {
+    switch (this) {
+      case PriorityLevel.core:
+        return 'Core';
+      case PriorityLevel.secondary:
+        return 'Secondary';
+      case PriorityLevel.optional:
+        return 'Optional';
+    }
+  }
+
+  int get levelNumber => index + 1;
+
+  int get xpReward {
+    switch (this) {
+      case PriorityLevel.core:
+        return 10;
+      case PriorityLevel.secondary:
+        return 5;
+      case PriorityLevel.optional:
+        return 2;
+    }
+  }
+
+  Color get accentColor {
+    switch (this) {
+      case PriorityLevel.core:
+        return Colors.red;
+      case PriorityLevel.secondary:
+        return Colors.orange;
+      case PriorityLevel.optional:
+        return Colors.green;
+    }
+  }
+}
+
 class PausePeriod {
   late DateTime startDate;
   late DateTime endDate;
@@ -49,6 +88,7 @@ class Habit {
   late int? reminderMinute;
   late int? timerMinutes;
   late Color color;
+  late PriorityLevel priorityLevel;
   late DateTime startDate;
   late DateTime? endDate;
   late DateTime createdAt;
@@ -71,6 +111,7 @@ class Habit {
     this.reminderMinute,
     this.timerMinutes,
     this.color = Colors.blue,
+    this.priorityLevel = PriorityLevel.core,
     DateTime? startDate,
     this.endDate,
     required this.createdAt,
@@ -97,6 +138,7 @@ class Habit {
       'color': color.toARGB32(),
       'startDate': startDate.toIso8601String(),
       'endDate': endDate?.toIso8601String(),
+      'priorityLevel': priorityLevel.index,
       'createdAt': createdAt.toIso8601String(),
       'archivedAt': archivedAt?.toIso8601String(),
       'sortOrder': sortOrder,
@@ -126,6 +168,7 @@ class Habit {
       reminderMinute: map['reminderMinute'],
       timerMinutes: map['timerMinutes'],
       color: Color(map['color'] ?? Colors.blue.toARGB32()),
+      priorityLevel: _parsePriorityLevel(map['priorityLevel']),
       startDate: map['startDate'] != null
           ? DateTime.parse(map['startDate'])
           : createdAt,
@@ -149,6 +192,23 @@ class Habit {
       return int.tryParse(value);
     }
     return null;
+  }
+
+  static PriorityLevel _parsePriorityLevel(dynamic value) {
+    if (value is int &&
+        value >= 0 &&
+        value < PriorityLevel.values.length) {
+      return PriorityLevel.values[value];
+    }
+    if (value is String) {
+      final parsed = int.tryParse(value);
+      if (parsed != null &&
+          parsed >= 0 &&
+          parsed < PriorityLevel.values.length) {
+        return PriorityLevel.values[parsed];
+      }
+    }
+    return PriorityLevel.core;
   }
 }
 
