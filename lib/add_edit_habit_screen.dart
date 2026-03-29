@@ -29,6 +29,8 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
   int _importanceScore = 0;
   bool _reminderEnabled = false;
   TimeOfDay? _reminderTime;
+  bool _useTimeVisibility = false;
+  TimeOfDay? _visibleAfterTime;
   late DateTime _startDate;
   DateTime? _endDate;
 
@@ -72,6 +74,14 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
           minute: widget.habit!.reminderMinute!,
         );
       }
+      _useTimeVisibility = widget.habit!.useTimeVisibility;
+      if (widget.habit!.visibleAfterHour != null &&
+          widget.habit!.visibleAfterMinute != null) {
+        _visibleAfterTime = TimeOfDay(
+          hour: widget.habit!.visibleAfterHour!,
+          minute: widget.habit!.visibleAfterMinute!,
+        );
+      }
     } else {
       _name = '';
       _description = '';
@@ -107,9 +117,19 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
         );
         return;
       }
+      if (_useTimeVisibility && _visibleAfterTime == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please choose when the habit becomes visible.'),
+          ),
+        );
+        return;
+      }
       if (_endDate != null && _endDate!.isBefore(_startDate)) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('End date cannot be before start date.')),
+          const SnackBar(
+            content: Text('End date cannot be before start date.'),
+          ),
         );
         return;
       }
@@ -147,6 +167,11 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
         reminderEnabled: _reminderEnabled,
         reminderHour: _reminderTime?.hour,
         reminderMinute: _reminderTime?.minute,
+        useTimeVisibility: _useTimeVisibility,
+        visibleAfterHour: _useTimeVisibility ? _visibleAfterTime?.hour : null,
+        visibleAfterMinute: _useTimeVisibility
+            ? _visibleAfterTime?.minute
+            : null,
         color: _color,
         priorityLevel: _priorityLevel,
         createdAt: widget.habit?.createdAt ?? DateTime.now(),
@@ -221,6 +246,18 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
     }
   }
 
+  Future<void> _pickVisibleAfterTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _visibleAfterTime ?? TimeOfDay.now(),
+    );
+    if (picked != null) {
+      setState(() {
+        _visibleAfterTime = picked;
+      });
+    }
+  }
+
   void _openColorPicker() {
     showDialog(
       context: context,
@@ -284,7 +321,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                 onSaved: (value) => _description = value ?? '',
               ),
               DropdownButtonFormField<PriorityLevel>(
-                value: _priorityLevel,
+                initialValue: _priorityLevel,
                 decoration: const InputDecoration(
                   labelText: 'Priority Level',
                   helperText:
@@ -293,7 +330,9 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                 items: PriorityLevel.values.map((level) {
                   return DropdownMenuItem(
                     value: level,
-                    child: Text('Level ${level.levelNumber} · ${level.displayName}'),
+                    child: Text(
+                      'Level ${level.levelNumber} · ${level.displayName}',
+                    ),
                   );
                 }).toList(),
                 onChanged: (value) {
@@ -459,6 +498,36 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                   subtitle: Text(_reminderTime?.format(context) ?? 'Not set'),
                   trailing: const Icon(Icons.schedule),
                   onTap: _pickReminderTime,
+                ),
+              const SizedBox(height: 16),
+              SwitchListTile(
+                title: const Text('Time-based visibility'),
+                subtitle: Text(
+                  _useTimeVisibility
+                      ? (_visibleAfterTime == null
+                            ? 'Choose when this habit should appear'
+                            : 'Show only after ${_visibleAfterTime!.format(context)}')
+                      : 'Always show this habit',
+                ),
+                value: _useTimeVisibility,
+                onChanged: (value) {
+                  setState(() {
+                    _useTimeVisibility = value;
+                    if (!value) {
+                      _visibleAfterTime = null;
+                    }
+                  });
+                },
+              ),
+              if (_useTimeVisibility)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Visible after'),
+                  subtitle: Text(
+                    _visibleAfterTime?.format(context) ?? 'Not set',
+                  ),
+                  trailing: const Icon(Icons.schedule),
+                  onTap: _pickVisibleAfterTime,
                 ),
               TextFormField(
                 initialValue: _timerMinutes?.toString() ?? '',

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:habit_tracker/habit_details_screen.dart';
 import 'package:habit_tracker/models.dart';
-import 'package:habit_tracker/utils/habit_schedule_utils.dart' as schedule_utils;
+import 'package:habit_tracker/utils/habit_schedule_utils.dart'
+    as schedule_utils;
 import 'package:habit_tracker/utils/pause_utils.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
@@ -39,17 +40,18 @@ class HistoryScreenState extends State<HistoryScreen> {
   }
 
   void _loadHabits() {
-    _habits = _habitBox.values
-        .map((e) => Habit.fromMap(Map<String, dynamic>.from(e)))
-        .where((habit) => !habit.isArchived)
-        .toList()
-      ..sort((a, b) {
-        final scoreCompare = b.importanceScore.compareTo(a.importanceScore);
-        if (scoreCompare != 0) {
-          return scoreCompare;
-        }
-        return a.sortOrder.compareTo(b.sortOrder);
-      });
+    _habits =
+        _habitBox.values
+            .map((e) => Habit.fromMap(Map<String, dynamic>.from(e)))
+            .where((habit) => !habit.isArchived)
+            .toList()
+          ..sort((a, b) {
+            final scoreCompare = b.importanceScore.compareTo(a.importanceScore);
+            if (scoreCompare != 0) {
+              return scoreCompare;
+            }
+            return a.sortOrder.compareTo(b.sortOrder);
+          });
     setState(() {});
   }
 
@@ -88,10 +90,12 @@ class HistoryScreenState extends State<HistoryScreen> {
     final normalizedEndDate = habit.endDate != null
         ? _normalizeDate(habit.endDate!)
         : null;
-    final statsEnd = normalizedEndDate != null && normalizedEndDate.isBefore(today)
+    final statsEnd =
+        normalizedEndDate != null && normalizedEndDate.isBefore(today)
         ? normalizedEndDate
         : today;
-    final shouldExcludeToday = _isSameDate(statsEnd, today) &&
+    final shouldExcludeToday =
+        _isSameDate(statsEnd, today) &&
         !isPausedOnDate(_pausePeriods, today) &&
         schedule_utils.isScheduledDay(habit, today) &&
         !_isHabitCompletedOnDate(habit, today);
@@ -161,9 +165,7 @@ class HistoryScreenState extends State<HistoryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Habit History'),
-      ),
+      appBar: AppBar(title: const Text('Habit History')),
       body: _habits.isEmpty
           ? const Center(child: Text('No habits to show.'))
           : ListView.builder(
@@ -179,16 +181,15 @@ class HistoryScreenState extends State<HistoryScreen> {
                     );
                   },
                   child: Card(
-                    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    margin: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Row(
                         children: [
-                          Container(
-                            width: 10,
-                            height: 50,
-                            color: habit.color,
-                          ),
+                          Container(width: 10, height: 50, color: habit.color),
                           const SizedBox(width: 16),
                           Expanded(
                             child: Column(

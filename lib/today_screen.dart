@@ -1,13 +1,15 @@
 import 'dart:async';
 import 'dart:math' as math;
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:habit_tracker/history_screen.dart';
 import 'package:habit_tracker/habit_details_screen.dart';
 import 'package:habit_tracker/manage_habits_screen.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/reminder_service.dart';
-import 'package:habit_tracker/utils/habit_schedule_utils.dart' as schedule_utils;
+import 'package:habit_tracker/utils/habit_schedule_utils.dart'
+    as schedule_utils;
+import 'package:habit_tracker/utils/habit_visibility_utils.dart';
 import 'package:habit_tracker/utils/pause_utils.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
@@ -27,11 +29,14 @@ class _TodayScreenState extends State<TodayScreen> {
   late Box _habitBox;
   late Box _dailyLogBox;
   late Box _settingsBox;
+  late ValueListenable<Box> _habitListenable;
+  late ValueListenable<Box> _settingsListenable;
   List<Habit> _habits = [];
   Map<String, DailyLog> _dailyCompletionStatus = {};
   List<PausePeriod> _pausePeriods = [];
   int _totalXp = 0;
   DateTime? _emergencyUnlockDate;
+  Timer? _visibilityRefreshTimer;
 
   @override
   void initState() {
@@ -39,17 +44,21 @@ class _TodayScreenState extends State<TodayScreen> {
     _habitBox = Hive.box('habits');
     _dailyLogBox = Hive.box('dailyLogs');
     _settingsBox = Hive.box(appSettingsBoxName);
+    _habitListenable = _habitBox.listenable();
+    _settingsListenable = _settingsBox.listenable();
     _loadPriorityMetadata();
     _loadHabits();
-    _habitBox.listenable().addListener(_loadHabits);
-    _settingsBox.listenable().addListener(_loadPausePeriods);
+    _startVisibilityRefreshTimer();
+    _habitListenable.addListener(_loadHabits);
+    _settingsListenable.addListener(_loadPausePeriods);
     _loadPausePeriods();
   }
 
   @override
   void dispose() {
-    _habitBox.listenable().removeListener(_loadHabits);
-    _settingsBox.listenable().removeListener(_loadPausePeriods);
+    _visibilityRefreshTimer?.cancel();
+    _habitListenable.removeListener(_loadHabits);
+    _settingsListenable.removeListener(_loadPausePeriods);
     super.dispose();
   }
 
@@ -62,25 +71,30 @@ class _TodayScreenState extends State<TodayScreen> {
         .map((e) => Habit.fromMap(Map<String, dynamic>.from(e)))
         .where((habit) => !habit.isArchived)
         .toList();
-    _ensureSortOrder(allHabits);
+    for (int i = 0; i < allHabits.length; i++) {
+      if (allHabits[i].sortOrder < 0) {
+        allHabits[i].sortOrder = i;
+      }
+    }
     final today = _normalizeDate(DateTime.now());
-    _habits = allHabits.where((habit) {
-      if (_normalizeDate(habit.startDate).isAfter(today)) {
-        return false;
-      }
-      if (habit.endDate != null &&
-          _normalizeDate(habit.endDate!).isBefore(today)) {
-        return false;
-      }
-      return schedule_utils.isScheduledDay(habit, today);
-    }).toList()
-      ..sort((a, b) {
-        final scoreCompare = b.importanceScore.compareTo(a.importanceScore);
-        if (scoreCompare != 0) {
-          return scoreCompare;
-        }
-        return a.sortOrder.compareTo(b.sortOrder);
-      });
+    _habits =
+        allHabits.where((habit) {
+          if (_normalizeDate(habit.startDate).isAfter(today)) {
+            return false;
+          }
+          if (habit.endDate != null &&
+              _normalizeDate(habit.endDate!).isBefore(today)) {
+            return false;
+          }
+          return schedule_utils.isScheduledDay(habit, today) &&
+              isHabitVisibleNow(habit);
+        }).toList()..sort((a, b) {
+          final scoreCompare = b.importanceScore.compareTo(a.importanceScore);
+          if (scoreCompare != 0) {
+            return scoreCompare;
+          }
+          return a.sortOrder.compareTo(b.sortOrder);
+        });
 
     _checkDailyReset();
     if (mounted) {
@@ -93,6 +107,17 @@ class _TodayScreenState extends State<TodayScreen> {
     if (mounted) {
       setState(() {});
     }
+  }
+
+  void _startVisibilityRefreshTimer() {
+    if (const bool.fromEnvironment('FLUTTER_TEST')) {
+      return;
+    }
+    _visibilityRefreshTimer?.cancel();
+    _visibilityRefreshTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _loadHabits(),
+    );
   }
 
   void _loadPriorityMetadata() {
@@ -136,21 +161,6 @@ class _TodayScreenState extends State<TodayScreen> {
 
   bool get _canUseEmergencyUnlock => !_isEmergencyUnlockActive;
 
-  void _ensureSortOrder(List<Habit> habits) {
-    bool needsSave = false;
-    for (int i = 0; i < habits.length; i++) {
-      if (habits[i].sortOrder < 0) {
-        habits[i].sortOrder = i;
-        needsSave = true;
-      }
-    }
-    if (needsSave) {
-      for (final habit in habits) {
-        _habitBox.put(habit.id, habit.toMap());
-      }
-    }
-  }
-
   Future<void> _checkDailyReset() async {
     String today = _formatDate(DateTime.now());
 
@@ -159,29 +169,28 @@ class _TodayScreenState extends State<TodayScreen> {
     for (var habit in _habits) {
       var logMap = _dailyLogBox.get('${habit.id}_$today');
       if (logMap != null) {
-        _dailyCompletionStatus[habit.id] =
-            DailyLog.fromMap(Map<String, dynamic>.from(logMap));
+        _dailyCompletionStatus[habit.id] = DailyLog.fromMap(
+          Map<String, dynamic>.from(logMap),
+        );
       } else {
-        _dailyCompletionStatus[habit.id] =
-            DailyLog(date: today, habitId: habit.id);
+        _dailyCompletionStatus[habit.id] = DailyLog(
+          date: today,
+          habitId: habit.id,
+        );
       }
     }
   }
 
   void _manageHabits() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => const ManageHabitsScreen(),
-      ),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const ManageHabitsScreen()));
   }
 
   void _openHistory() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => const HistoryScreen(),
-      ),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const HistoryScreen()));
   }
 
   Future<void> _toggleHabitCompletion(Habit habit, bool? newValue) async {
@@ -190,12 +199,16 @@ class _TodayScreenState extends State<TodayScreen> {
     }
     String today = _formatDate(DateTime.now());
     DailyLog log =
-        _dailyCompletionStatus[habit.id] ?? DailyLog(date: today, habitId: habit.id);
+        _dailyCompletionStatus[habit.id] ??
+        DailyLog(date: today, habitId: habit.id);
     final wasCompleted = log.completed;
     log.completed = newValue ?? false;
     await _dailyLogBox.put('${habit.id}_$today', log.toMap());
-    final updatedXp =
-        await _tryAwardXpForCompletion(habit, wasCompleted, log.completed);
+    final updatedXp = await _tryAwardXpForCompletion(
+      habit,
+      wasCompleted,
+      log.completed,
+    );
     setState(() {
       _dailyCompletionStatus[habit.id] = log;
       if (updatedXp != null) {
@@ -210,15 +223,19 @@ class _TodayScreenState extends State<TodayScreen> {
     }
     String today = _formatDate(DateTime.now());
     DailyLog log =
-        _dailyCompletionStatus[habit.id] ?? DailyLog(date: today, habitId: habit.id);
+        _dailyCompletionStatus[habit.id] ??
+        DailyLog(date: today, habitId: habit.id);
     log.count = (log.count ?? 0) + 1;
     final wasCompleted = log.completed;
     if (habit.timesPerDay != null && log.count! >= habit.timesPerDay!) {
       log.completed = true;
     }
     await _dailyLogBox.put('${habit.id}_$today', log.toMap());
-    final updatedXp =
-        await _tryAwardXpForCompletion(habit, wasCompleted, log.completed);
+    final updatedXp = await _tryAwardXpForCompletion(
+      habit,
+      wasCompleted,
+      log.completed,
+    );
     setState(() {
       _dailyCompletionStatus[habit.id] = log;
       if (updatedXp != null) {
@@ -233,15 +250,19 @@ class _TodayScreenState extends State<TodayScreen> {
     }
     String today = _formatDate(DateTime.now());
     DailyLog log =
-        _dailyCompletionStatus[habit.id] ?? DailyLog(date: today, habitId: habit.id);
+        _dailyCompletionStatus[habit.id] ??
+        DailyLog(date: today, habitId: habit.id);
     log.count = (log.count ?? 0) > 0 ? (log.count! - 1) : 0;
     final wasCompleted = log.completed;
     if (habit.timesPerDay != null && log.count! < habit.timesPerDay!) {
       log.completed = false;
     }
     await _dailyLogBox.put('${habit.id}_$today', log.toMap());
-    final updatedXp =
-        await _tryAwardXpForCompletion(habit, wasCompleted, log.completed);
+    final updatedXp = await _tryAwardXpForCompletion(
+      habit,
+      wasCompleted,
+      log.completed,
+    );
     setState(() {
       _dailyCompletionStatus[habit.id] = log;
       if (updatedXp != null) {
@@ -287,9 +308,9 @@ class _TodayScreenState extends State<TodayScreen> {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${habit.name} timer completed.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('${habit.name} timer completed.')));
   }
 
   String _formatDate(DateTime date) {
@@ -316,10 +337,12 @@ class _TodayScreenState extends State<TodayScreen> {
     final normalizedEndDate = habit.endDate != null
         ? _normalizeDate(habit.endDate!)
         : null;
-    final statsEnd = normalizedEndDate != null && normalizedEndDate.isBefore(today)
+    final statsEnd =
+        normalizedEndDate != null && normalizedEndDate.isBefore(today)
         ? normalizedEndDate
         : today;
-    final shouldExcludeToday = _isSameDate(statsEnd, today) &&
+    final shouldExcludeToday =
+        _isSameDate(statsEnd, today) &&
         !_isPaused(today) &&
         schedule_utils.isScheduledDay(habit, today) &&
         !_isHabitCompletedOnDate(habit, today);
@@ -595,7 +618,9 @@ class _TodayScreenState extends State<TodayScreen> {
         actions: [
           IconButton(
             icon: Icon(
-              isTodayPaused ? Icons.pause_circle_filled : Icons.pause_circle_outline,
+              isTodayPaused
+                  ? Icons.pause_circle_filled
+                  : Icons.pause_circle_outline,
             ),
             tooltip: 'Pause tracking',
             onPressed: _openPauseDialog,
@@ -614,7 +639,8 @@ class _TodayScreenState extends State<TodayScreen> {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
-          if (nextPause != null) _buildPauseBanner(context, isTodayPaused, nextPause),
+          if (nextPause != null)
+            _buildPauseBanner(context, isTodayPaused, nextPause),
           const SizedBox(height: 16),
           _buildFocusCard(coreStats),
           if (unlockBanners.isNotEmpty) ...[
@@ -699,12 +725,15 @@ class _TodayScreenState extends State<TodayScreen> {
     final notifications = <Widget>[];
     if ((stats[PriorityLevel.core]?.total ?? 0) > 0 &&
         _isLevelUnlocked(PriorityLevel.secondary, stats)) {
-      notifications.add(_buildUnlockBanner('👉 Core tasks done — Side tasks unlocked'));
+      notifications.add(
+        _buildUnlockBanner('👉 Core tasks done — Side tasks unlocked'),
+      );
     }
     if ((stats[PriorityLevel.secondary]?.total ?? 0) > 0 &&
         _isLevelUnlocked(PriorityLevel.optional, stats)) {
-      notifications
-          .add(_buildUnlockBanner('👉 Secondary tasks done — Optional tasks unlocked'));
+      notifications.add(
+        _buildUnlockBanner('👉 Secondary tasks done — Optional tasks unlocked'),
+      );
     }
     return notifications;
   }
@@ -742,7 +771,10 @@ class _TodayScreenState extends State<TodayScreen> {
             children: [
               const Icon(Icons.auto_graph, color: Colors.amber),
               const SizedBox(width: 12),
-              const Text('XP points', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text(
+                'XP points',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               const Spacer(),
               Text(
                 '$_totalXp XP',
@@ -796,7 +828,8 @@ class _TodayScreenState extends State<TodayScreen> {
     if (previousStats.total == 0) {
       return true;
     }
-    return previousStats.completed / previousStats.total >= _priorityUnlockThreshold;
+    return previousStats.completed / previousStats.total >=
+        _priorityUnlockThreshold;
   }
 
   List<Widget> _buildPriorityLevelWidgets({
@@ -812,12 +845,15 @@ class _TodayScreenState extends State<TodayScreen> {
     widgets.add(const SizedBox(height: 8));
     if (!unlocked) {
       final previousLevel = PriorityLevel.values[level.index - 1];
-      widgets.add(_buildLockedSection(level, previousLevel, statsMap[previousLevel]!));
+      widgets.add(
+        _buildLockedSection(level, previousLevel, statsMap[previousLevel]!),
+      );
     } else if (habits.isEmpty) {
       widgets.add(_buildEmptyLevelCard(level));
     } else {
       for (final habit in habits) {
-        final log = _dailyCompletionStatus[habit.id] ??
+        final log =
+            _dailyCompletionStatus[habit.id] ??
             DailyLog(date: _formatDate(DateTime.now()), habitId: habit.id);
         widgets.add(_buildHabitCard(habit, log, isTodayPaused));
       }
@@ -885,8 +921,8 @@ class _TodayScreenState extends State<TodayScreen> {
     final progressPercent = previousStats.total == 0
         ? '0'
         : ((previousStats.completed / previousStats.total) * 100)
-            .clamp(0, 100)
-            .toStringAsFixed(0);
+              .clamp(0, 100)
+              .toStringAsFixed(0);
     final message = previousStats.total == 0
         ? 'Add ${previousLevel.displayName} tasks to unlock ${level.displayName} tasks.'
         : 'Complete $requirement ${previousLevel.displayName} tasks ($progressPercent% done) to unlock this level.';
@@ -949,11 +985,7 @@ class _TodayScreenState extends State<TodayScreen> {
             padding: const EdgeInsets.all(16.0),
             child: Row(
               children: [
-                Container(
-                  width: 10,
-                  height: 50,
-                  color: habit.color,
-                ),
+                Container(width: 10, height: 50, color: habit.color),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
@@ -992,12 +1024,28 @@ class _TodayScreenState extends State<TodayScreen> {
                         children: [
                           Text('Streak: ${_getStreak(habit)}'),
                           const SizedBox(width: 16),
-                          Text('Success: ${_getSuccessRate(habit).toStringAsFixed(2)}%'),
+                          Text(
+                            'Success: ${_getSuccessRate(habit).toStringAsFixed(2)}%',
+                          ),
                         ],
                       ),
                       if (isTodayPaused) ...[
                         const SizedBox(height: 8),
                         const Text('Tracking paused today'),
+                      ],
+                      if (habit.useTimeVisibility &&
+                          habit.visibleAfterHour != null &&
+                          habit.visibleAfterMinute != null) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(Icons.schedule, size: 18),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Visible after ${formatHabitVisibleAfter(habit, context)!}',
+                            ),
+                          ],
+                        ),
                       ],
                       if ((habit.timerMinutes ?? 0) > 0) ...[
                         const SizedBox(height: 8),
@@ -1008,7 +1056,9 @@ class _TodayScreenState extends State<TodayScreen> {
                             Text(_formatTimerLabel(habit.timerMinutes!)),
                             const SizedBox(width: 12),
                             TextButton(
-                              onPressed: isTodayPaused ? null : () => _startHabitTimer(habit),
+                              onPressed: isTodayPaused
+                                  ? null
+                                  : () => _startHabitTimer(habit),
                               child: const Text('Start Timer'),
                             ),
                           ],
@@ -1020,21 +1070,27 @@ class _TodayScreenState extends State<TodayScreen> {
                 if (habit.type == HabitType.binary)
                   Checkbox(
                     value: log.completed,
-                    onChanged: isTodayPaused ? null : (value) {
-                      _toggleHabitCompletion(habit, value);
-                    },
+                    onChanged: isTodayPaused
+                        ? null
+                        : (value) {
+                            _toggleHabitCompletion(habit, value);
+                          },
                   ),
                 if (habit.type == HabitType.counted)
                   Row(
                     children: [
                       IconButton(
                         icon: const Icon(Icons.remove),
-                        onPressed: isTodayPaused ? null : () => _decrementHabitCount(habit),
+                        onPressed: isTodayPaused
+                            ? null
+                            : () => _decrementHabitCount(habit),
                       ),
                       Text('${log.count ?? 0} / ${habit.timesPerDay ?? ''}'),
                       IconButton(
                         icon: const Icon(Icons.add),
-                        onPressed: isTodayPaused ? null : () => _incrementHabitCount(habit),
+                        onPressed: isTodayPaused
+                            ? null
+                            : () => _incrementHabitCount(habit),
                       ),
                     ],
                   ),
@@ -1205,10 +1261,7 @@ class _HabitTimerDialogState extends State<_HabitTimerDialog>
                 label: Text(_running ? 'Pause' : 'Start'),
               ),
               const SizedBox(width: 8),
-              TextButton(
-                onPressed: _reset,
-                child: const Text('Reset'),
-              ),
+              TextButton(onPressed: _reset, child: const Text('Reset')),
             ],
           ),
         ],

@@ -86,6 +86,9 @@ class Habit {
   late bool reminderEnabled;
   late int? reminderHour;
   late int? reminderMinute;
+  late bool useTimeVisibility;
+  late int? visibleAfterHour;
+  late int? visibleAfterMinute;
   late int? timerMinutes;
   late Color color;
   late PriorityLevel priorityLevel;
@@ -109,6 +112,9 @@ class Habit {
     this.reminderEnabled = false,
     this.reminderHour,
     this.reminderMinute,
+    this.useTimeVisibility = false,
+    this.visibleAfterHour,
+    this.visibleAfterMinute,
     this.timerMinutes,
     this.color = Colors.blue,
     this.priorityLevel = PriorityLevel.core,
@@ -134,6 +140,9 @@ class Habit {
       'reminderEnabled': reminderEnabled,
       'reminderHour': reminderHour,
       'reminderMinute': reminderMinute,
+      'useTimeVisibility': useTimeVisibility,
+      'visibleAfterHour': visibleAfterHour,
+      'visibleAfterMinute': visibleAfterMinute,
       'timerMinutes': timerMinutes,
       'color': color.toARGB32(),
       'startDate': startDate.toIso8601String(),
@@ -166,6 +175,9 @@ class Habit {
       reminderEnabled: map['reminderEnabled'] ?? false,
       reminderHour: map['reminderHour'],
       reminderMinute: map['reminderMinute'],
+      useTimeVisibility: map['useTimeVisibility'] ?? false,
+      visibleAfterHour: map['visibleAfterHour'],
+      visibleAfterMinute: map['visibleAfterMinute'],
       timerMinutes: map['timerMinutes'],
       color: Color(map['color'] ?? Colors.blue.toARGB32()),
       priorityLevel: _parsePriorityLevel(map['priorityLevel']),
@@ -195,9 +207,7 @@ class Habit {
   }
 
   static PriorityLevel _parsePriorityLevel(dynamic value) {
-    if (value is int &&
-        value >= 0 &&
-        value < PriorityLevel.values.length) {
+    if (value is int && value >= 0 && value < PriorityLevel.values.length) {
       return PriorityLevel.values[value];
     }
     if (value is String) {

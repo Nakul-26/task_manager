@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:habit_tracker/models.dart';
-import 'package:habit_tracker/utils/habit_schedule_utils.dart' as schedule_utils;
+import 'package:habit_tracker/utils/habit_schedule_utils.dart'
+    as schedule_utils;
 import 'package:habit_tracker/utils/pause_utils.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:hive/hive.dart';
@@ -65,7 +66,8 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
     final normalizedEndDate = widget.habit.endDate != null
         ? _normalizeDate(widget.habit.endDate!)
         : null;
-    final statsEnd = normalizedEndDate != null && normalizedEndDate.isBefore(today)
+    final statsEnd =
+        normalizedEndDate != null && normalizedEndDate.isBefore(today)
         ? normalizedEndDate
         : today;
     final todayKey = _formatDate(today);
@@ -213,7 +215,8 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
     final normalizedEndDate = widget.habit.endDate != null
         ? _normalizeDate(widget.habit.endDate!)
         : null;
-    final effectiveToday = normalizedEndDate != null && normalizedEndDate.isBefore(today)
+    final effectiveToday =
+        normalizedEndDate != null && normalizedEndDate.isBefore(today)
         ? normalizedEndDate
         : today;
     final calendarLastDay = normalizedStartDate.isAfter(effectiveToday)
@@ -244,7 +247,8 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
             ),
             const SizedBox(height: 20),
             Text('Start Date: ${_formatDate(normalizedStartDate)}'),
-            if (normalizedEndDate != null) Text('End Date: ${_formatDate(normalizedEndDate)}'),
+            if (normalizedEndDate != null)
+              Text('End Date: ${_formatDate(normalizedEndDate)}'),
             Text('Completed Days: $_completedDays'),
             Text('Missed Days: $_missedDays'),
             Text('Current Streak: $_currentStreak'),
@@ -272,7 +276,8 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
               calendarBuilders: CalendarBuilders(
                 markerBuilder: (context, day, events) {
                   final normalizedDay = _normalizeDate(day);
-                  if (events.isEmpty && (_pausedEvents[normalizedDay]?.isEmpty ?? true)) {
+                  if (events.isEmpty &&
+                      (_pausedEvents[normalizedDay]?.isEmpty ?? true)) {
                     return const SizedBox.shrink();
                   }
                   return Align(
@@ -289,7 +294,8 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
                               shape: BoxShape.circle,
                             ),
                           ),
-                        if ((_pausedEvents[normalizedDay]?.isNotEmpty ?? false) &&
+                        if ((_pausedEvents[normalizedDay]?.isNotEmpty ??
+                                false) &&
                             events.isNotEmpty)
                           const SizedBox(width: 4),
                         if (events.isNotEmpty)

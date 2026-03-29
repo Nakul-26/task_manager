@@ -128,9 +128,7 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
   void _openAddHabit() {
     Navigator.of(context)
         .push(
-          MaterialPageRoute(
-            builder: (context) => const AddEditHabitScreen(),
-          ),
+          MaterialPageRoute(builder: (context) => const AddEditHabitScreen()),
         )
         .then((_) => _loadHabits());
   }

@@ -3,7 +3,8 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:hive/hive.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/utils/pause_utils.dart';
-import 'package:habit_tracker/utils/habit_schedule_utils.dart' as schedule_utils;
+import 'package:habit_tracker/utils/habit_schedule_utils.dart'
+    as schedule_utils;
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
