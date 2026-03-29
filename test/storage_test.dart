@@ -21,9 +21,11 @@ void main() {
       description: 'A habit for testing',
       createdAt: DateTime.now(),
     );
-    
+
     // Stub the 'put' method to do nothing, as we are just verifying the call.
-    when(() => mockHabitsBox.put(any(), any())).thenAnswer((_) async => Future.value());
+    when(
+      () => mockHabitsBox.put(any(), any()),
+    ).thenAnswer((_) async => Future.value());
 
     // Act
     mockHabitsBox.put(habit.id, habit.toMap());

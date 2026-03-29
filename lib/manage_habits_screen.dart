@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:habit_tracker/add_edit_habit_screen.dart';
 import 'package:habit_tracker/archived_habits_screen.dart';
+import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/reminder_service.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -19,7 +20,7 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
   @override
   void initState() {
     super.initState();
-    _habitBox = Hive.box('habits');
+    _habitBox = Hive.box(HiveBoxNames.habits);
     _loadHabits();
     _habitBox.listenable().addListener(_loadHabits);
   }

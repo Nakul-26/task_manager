@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/utils/habit_schedule_utils.dart'
     as schedule_utils;
@@ -31,8 +32,8 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
   @override
   void initState() {
     super.initState();
-    _dailyLogBox = Hive.box('dailyLogs');
-    _settingsBox = Hive.box(appSettingsBoxName);
+    _dailyLogBox = Hive.box(HiveBoxNames.dailyLogs);
+    _settingsBox = Hive.box(HiveBoxNames.appSettings);
     _loadLogs();
   }
 

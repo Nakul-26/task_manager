@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:habit_tracker/box_names.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/reminder_service.dart';
@@ -135,7 +136,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
       }
 
       _formKey.currentState!.save();
-      final habitBox = Hive.box('habits');
+      final habitBox = Hive.box(HiveBoxNames.habits);
       int sortOrder = widget.habit?.sortOrder ?? -1;
       if (widget.habit == null) {
         final existingHabits = habitBox.values
@@ -188,7 +189,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
   }
 
   Future<void> _deleteHabit() async {
-    final habitBox = Hive.box('habits');
+    final habitBox = Hive.box(HiveBoxNames.habits);
     await habitBox.delete(widget.habit!.id);
     await ReminderService.instance.cancelHabitReminders(widget.habit!.id);
     if (!mounted) {

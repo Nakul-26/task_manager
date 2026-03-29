@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/habit_details_screen.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/utils/habit_schedule_utils.dart'
@@ -23,9 +24,9 @@ class HistoryScreenState extends State<HistoryScreen> {
   @override
   void initState() {
     super.initState();
-    _habitBox = Hive.box('habits');
-    _dailyLogBox = Hive.box('dailyLogs');
-    _settingsBox = Hive.box(appSettingsBoxName);
+    _habitBox = Hive.box(HiveBoxNames.habits);
+    _dailyLogBox = Hive.box(HiveBoxNames.dailyLogs);
+    _settingsBox = Hive.box(HiveBoxNames.appSettings);
     _loadHabits();
     _habitBox.listenable().addListener(_loadHabits);
     _settingsBox.listenable().addListener(_loadPausePeriods);

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/history_screen.dart';
 import 'package:habit_tracker/habit_details_screen.dart';
 import 'package:habit_tracker/manage_habits_screen.dart';
@@ -41,9 +42,9 @@ class _TodayScreenState extends State<TodayScreen> {
   @override
   void initState() {
     super.initState();
-    _habitBox = Hive.box('habits');
-    _dailyLogBox = Hive.box('dailyLogs');
-    _settingsBox = Hive.box(appSettingsBoxName);
+    _habitBox = Hive.box(HiveBoxNames.habits);
+    _dailyLogBox = Hive.box(HiveBoxNames.dailyLogs);
+    _settingsBox = Hive.box(HiveBoxNames.appSettings);
     _habitListenable = _habitBox.listenable();
     _settingsListenable = _settingsBox.listenable();
     _loadPriorityMetadata();

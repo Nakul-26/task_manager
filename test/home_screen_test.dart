@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/main.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/utils/pause_utils.dart';
@@ -9,6 +10,62 @@ import 'dart:io';
 
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
+  late Directory tempDir;
+  late String habitsBoxName;
+  late String dailyLogsBoxName;
+  late String appSettingsBoxName;
+
+  setUpAll(() async {
+    tempDir = await Directory.systemTemp.createTemp('hive_test_');
+    Hive.init(tempDir.path);
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      (MethodCall methodCall) async {
+        if (methodCall.method == 'getApplicationDocumentsDirectory') {
+          return tempDir.path;
+        }
+        return null;
+      },
+    );
+  });
+
+  setUp(() async {
+    final suffix = DateTime.now().microsecondsSinceEpoch.toString();
+    habitsBoxName = 'habits_$suffix';
+    dailyLogsBoxName = 'dailyLogs_$suffix';
+    appSettingsBoxName = 'appSettings_$suffix';
+
+    HiveBoxNames.habits = habitsBoxName;
+    HiveBoxNames.dailyLogs = dailyLogsBoxName;
+    HiveBoxNames.appSettings = appSettingsBoxName;
+
+    await Hive.openBox(habitsBoxName);
+    await Hive.openBox(dailyLogsBoxName);
+    await Hive.openBox(appSettingsBoxName);
+  });
+
+  tearDown(() async {
+    await Hive.box(habitsBoxName).close();
+    await Hive.box(dailyLogsBoxName).close();
+    await Hive.box(appSettingsBoxName).close();
+    await Hive.deleteBoxFromDisk(habitsBoxName);
+    await Hive.deleteBoxFromDisk(dailyLogsBoxName);
+    await Hive.deleteBoxFromDisk(appSettingsBoxName);
+  });
+
+  tearDownAll(() async {
+    HiveBoxNames.habits = 'habits';
+    HiveBoxNames.dailyLogs = 'dailyLogs';
+    HiveBoxNames.appSettings = 'appSettings';
+    await Hive.close();
+    if (tempDir.existsSync()) {
+      await tempDir.delete(recursive: true);
+    }
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      null,
+    );
+  });
 
   Future<void> pumpHome(WidgetTester tester) async {
     addTearDown(() async {
@@ -19,36 +76,6 @@ void main() {
     await tester.pumpWidget(const MyApp());
     await tester.pump();
   }
-
-  setUpAll(() async {
-    final tempDir = await Directory.systemTemp.createTemp();
-
-    binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      (MethodCall methodCall) async {
-        if (methodCall.method == 'getApplicationDocumentsDirectory') {
-          return tempDir.path;
-        }
-        return null;
-      },
-    );
-
-    Hive.init(tempDir.path);
-    await Hive.openBox('habits');
-    await Hive.openBox('dailyLogs');
-    await Hive.openBox(appSettingsBoxName);
-  });
-
-  // Clear boxes before each test
-  setUp(() async {
-    await Hive.box('habits').clear();
-    await Hive.box('dailyLogs').clear();
-    await Hive.box(appSettingsBoxName).clear();
-  });
-
-  tearDownAll(() async {
-    await Hive.close();
-  });
 
   testWidgets('Home screen shows app bar title', (WidgetTester tester) async {
     await pumpHome(tester);
@@ -64,7 +91,7 @@ void main() {
       description: 'A habit for testing',
       createdAt: DateTime.now(),
     );
-    await Hive.box('habits').put(habit.id, habit.toMap());
+    await Hive.box(HiveBoxNames.habits).put(habit.id, habit.toMap());
 
     await pumpHome(tester);
 
@@ -79,7 +106,7 @@ void main() {
       description: 'A habit for testing',
       createdAt: DateTime.now(),
     );
-    await Hive.box('habits').put(habit.id, habit.toMap());
+    await Hive.box(HiveBoxNames.habits).put(habit.id, habit.toMap());
 
     await pumpHome(tester);
 
@@ -107,7 +134,9 @@ void main() {
       createdAt: DateTime.now(),
       archivedAt: DateTime.now(),
     );
-    await Hive.box('habits').put(archivedHabit.id, archivedHabit.toMap());
+    await Hive.box(
+      HiveBoxNames.habits,
+    ).put(archivedHabit.id, archivedHabit.toMap());
 
     await pumpHome(tester);
 
@@ -133,7 +162,7 @@ void main() {
       visibleAfterMinute: hiddenUntil.minute,
       createdAt: now,
     );
-    await Hive.box('habits').put(habit.id, habit.toMap());
+    await Hive.box(HiveBoxNames.habits).put(habit.id, habit.toMap());
 
     await pumpHome(tester);
 
@@ -150,8 +179,8 @@ void main() {
       description: 'Should be disabled while paused',
       createdAt: today,
     );
-    await Hive.box('habits').put(habit.id, habit.toMap());
-    await Hive.box(appSettingsBoxName).put(pausePeriodsKey, [
+    await Hive.box(HiveBoxNames.habits).put(habit.id, habit.toMap());
+    await Hive.box(HiveBoxNames.appSettings).put(pausePeriodsKey, [
       PausePeriod(startDate: today, endDate: today).toMap(),
     ]);
 

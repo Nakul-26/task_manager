@@ -1,6 +1,7 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:hive/hive.dart';
+import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/utils/pause_utils.dart';
 import 'package:habit_tracker/utils/habit_schedule_utils.dart'
@@ -289,7 +290,7 @@ class ReminderService {
   }
 
   bool _isPausedOnDate(DateTime date) {
-    final settingsBox = Hive.box<dynamic>(appSettingsBoxName);
+    final settingsBox = Hive.box<dynamic>(HiveBoxNames.appSettings);
     final pausePeriods = loadPausePeriods(settingsBox);
     return isPausedOnDate(pausePeriods, date);
   }
