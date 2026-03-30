@@ -35,6 +35,7 @@ class _TodayScreenState extends State<TodayScreen> {
   List<Habit> _habits = [];
   Map<String, DailyLog> _dailyCompletionStatus = {};
   List<PausePeriod> _pausePeriods = [];
+  final Map<PriorityLevel, bool> _expandedCompletedSections = {};
   int _totalXp = 0;
   DateTime? _emergencyUnlockDate;
   Timer? _visibilityRefreshTimer;
@@ -833,6 +834,17 @@ class _TodayScreenState extends State<TodayScreen> {
         _priorityUnlockThreshold;
   }
 
+  bool _isHabitCompletedToday(Habit habit) {
+    return _dailyCompletionStatus[habit.id]?.completed == true;
+  }
+
+  void _toggleCompletedSection(PriorityLevel level) {
+    setState(() {
+      _expandedCompletedSections[level] =
+          !(_expandedCompletedSections[level] ?? false);
+    });
+  }
+
   List<Widget> _buildPriorityLevelWidgets({
     required PriorityLevel level,
     required List<Habit> habits,
@@ -852,11 +864,60 @@ class _TodayScreenState extends State<TodayScreen> {
     } else if (habits.isEmpty) {
       widgets.add(_buildEmptyLevelCard(level));
     } else {
-      for (final habit in habits) {
+      final activeHabits = habits.where((habit) => !_isHabitCompletedToday(habit));
+      final completedHabits = habits.where(_isHabitCompletedToday).toList();
+
+      for (final habit in activeHabits) {
         final log =
             _dailyCompletionStatus[habit.id] ??
             DailyLog(date: _formatDate(DateTime.now()), habitId: habit.id);
-        widgets.add(_buildHabitCard(habit, log, isTodayPaused));
+        widgets.add(
+          _buildHabitCard(
+            habit,
+            log,
+            isTodayPaused,
+            isCompleted: false,
+          ),
+        );
+      }
+
+      if (activeHabits.isEmpty && completedHabits.isNotEmpty) {
+        widgets.add(_buildAllDoneCard(level));
+      }
+
+      if (completedHabits.isNotEmpty) {
+        widgets.add(
+          _buildCompletedSectionHeader(
+            level: level,
+            completedCount: completedHabits.length,
+          ),
+        );
+        widgets.add(
+          AnimatedCrossFade(
+            duration: const Duration(milliseconds: 200),
+            crossFadeState:
+                (_expandedCompletedSections[level] ?? false)
+                    ? CrossFadeState.showFirst
+                    : CrossFadeState.showSecond,
+            firstChild: Column(
+              children: completedHabits.map((habit) {
+                final log =
+                    _dailyCompletionStatus[habit.id] ??
+                    DailyLog(
+                      date: _formatDate(DateTime.now()),
+                      habitId: habit.id,
+                    );
+                return _buildHabitCard(
+                  habit,
+                  log,
+                  isTodayPaused,
+                  isCompleted: true,
+                );
+              }).toList(),
+            ),
+            secondChild: const SizedBox.shrink(),
+          ),
+        );
       }
     }
     return widgets;
@@ -969,7 +1030,65 @@ class _TodayScreenState extends State<TodayScreen> {
     );
   }
 
-  Widget _buildHabitCard(Habit habit, DailyLog log, bool isTodayPaused) {
+  Widget _buildAllDoneCard(PriorityLevel level) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Card(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        color: Colors.green.shade50,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            'All ${level.displayName} tasks completed.',
+            style: TextStyle(
+              color: Colors.green.shade800,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompletedSectionHeader({
+    required PriorityLevel level,
+    required int completedCount,
+  }) {
+    final isExpanded = _expandedCompletedSections[level] ?? false;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _toggleCompletedSection(level),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Completed ($completedCount)',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHabitCard(
+    Habit habit,
+    DailyLog log,
+    bool isTodayPaused, {
+    bool isCompleted = false,
+  }) {
     return GestureDetector(
       onTap: () {
         Navigator.of(context).push(
@@ -979,7 +1098,9 @@ class _TodayScreenState extends State<TodayScreen> {
         );
       },
       child: Opacity(
-        opacity: isTodayPaused ? 0.65 : 1,
+        opacity: isTodayPaused
+            ? 0.65
+            : (isCompleted ? 0.6 : 1),
         child: Card(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Padding(
@@ -999,9 +1120,12 @@ class _TodayScreenState extends State<TodayScreen> {
                               habit.name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
+                                decoration: isCompleted
+                                    ? TextDecoration.lineThrough
+                                    : TextDecoration.none,
                               ),
                             ),
                           ),
@@ -1019,6 +1143,11 @@ class _TodayScreenState extends State<TodayScreen> {
                         habit.description,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          decoration: isCompleted
+                              ? TextDecoration.lineThrough
+                              : TextDecoration.none,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       Row(

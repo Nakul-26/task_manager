@@ -17,6 +17,8 @@ class AddEditHabitScreen extends StatefulWidget {
 
 class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
   final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _nameController;
+  late final TextEditingController _descriptionController;
   late String _name;
   late String _description;
   HabitType _type = HabitType.binary;
@@ -90,6 +92,15 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
       _startDate = _normalizeDate(DateTime.now());
       _endDate = null;
     }
+    _nameController = TextEditingController(text: _name);
+    _descriptionController = TextEditingController(text: _description);
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
   }
 
   DateTime _normalizeDate(DateTime date) {
@@ -101,6 +112,9 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
   }
 
   Future<void> _saveHabit() async {
+    FocusScope.of(context).unfocus();
+    _name = _nameController.text.trim();
+    _description = _descriptionController.text.trim();
     if (_formKey.currentState!.validate()) {
       if (_frequency == Frequency.weekly && _daysOfWeek.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -134,8 +148,6 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
         );
         return;
       }
-
-      _formKey.currentState!.save();
       final habitBox = Hive.box(HiveBoxNames.habits);
       int sortOrder = widget.habit?.sortOrder ?? -1;
       if (widget.habit == null) {
@@ -306,20 +318,18 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
           child: ListView(
             children: [
               TextFormField(
-                initialValue: _name,
+                controller: _nameController,
                 decoration: const InputDecoration(labelText: 'Name'),
                 validator: (value) {
-                  if (value == null || value.isEmpty) {
+                  if (value == null || value.trim().isEmpty) {
                     return 'Please enter a name';
                   }
                   return null;
                 },
-                onSaved: (value) => _name = value!,
               ),
               TextFormField(
-                initialValue: _description,
+                controller: _descriptionController,
                 decoration: const InputDecoration(labelText: 'Description'),
-                onSaved: (value) => _description = value ?? '',
               ),
               DropdownButtonFormField<PriorityLevel>(
                 initialValue: _priorityLevel,

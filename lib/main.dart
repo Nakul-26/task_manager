@@ -1,7 +1,6 @@
 import 'package:habit_tracker/box_names.dart';
 import 'package:flutter/material.dart';
 import 'package:habit_tracker/today_screen.dart';
-import 'package:habit_tracker/utils/pause_utils.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 void main() async {

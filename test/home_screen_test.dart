@@ -192,4 +192,79 @@ void main() {
     expect(checkbox.onChanged, isNull);
     expect(find.text('Tracking paused today'), findsOneWidget);
   });
+
+  testWidgets('Completed habits are collapsed by default', (
+    WidgetTester tester,
+  ) async {
+    final today = DateTime.now();
+    final todayKey =
+        '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+
+    final activeHabit = Habit(
+      id: 'active-1',
+      name: 'Exercise',
+      description: 'Still pending',
+      createdAt: today,
+    );
+    final completedHabit = Habit(
+      id: 'done-1',
+      name: 'Brush Teeth',
+      description: 'Already done',
+      createdAt: today,
+    );
+
+    await Hive.box(
+      HiveBoxNames.habits,
+    ).put(activeHabit.id, activeHabit.toMap());
+    await Hive.box(
+      HiveBoxNames.habits,
+    ).put(completedHabit.id, completedHabit.toMap());
+    await Hive.box(HiveBoxNames.dailyLogs).put('${completedHabit.id}_$todayKey', {
+      'date': todayKey,
+      'habitId': completedHabit.id,
+      'completed': true,
+      'count': null,
+    });
+
+    await pumpHome(tester);
+
+    expect(find.text('Exercise'), findsOneWidget);
+    expect(find.text('Completed (1)'), findsOneWidget);
+    expect(find.text('Brush Teeth'), findsNothing);
+  });
+
+  testWidgets('Completed habits expand when tapping completed header', (
+    WidgetTester tester,
+  ) async {
+    final today = DateTime.now();
+    final todayKey =
+        '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+
+    final completedHabit = Habit(
+      id: 'done-2',
+      name: 'Morning Walk',
+      description: 'Already done',
+      createdAt: today,
+    );
+
+    await Hive.box(
+      HiveBoxNames.habits,
+    ).put(completedHabit.id, completedHabit.toMap());
+    await Hive.box(HiveBoxNames.dailyLogs).put('${completedHabit.id}_$todayKey', {
+      'date': todayKey,
+      'habitId': completedHabit.id,
+      'completed': true,
+      'count': null,
+    });
+
+    await pumpHome(tester);
+
+    expect(find.text('Morning Walk'), findsNothing);
+
+    await tester.tap(find.text('Completed (1)'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('Morning Walk'), findsOneWidget);
+  }, timeout: const Timeout(Duration(seconds: 15)));
 }
