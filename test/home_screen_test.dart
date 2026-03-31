@@ -11,9 +11,9 @@ import 'dart:io';
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
   late Directory tempDir;
-  late String habitsBoxName;
-  late String dailyLogsBoxName;
-  late String appSettingsBoxName;
+  const habitsBoxName = 'habits_test';
+  const dailyLogsBoxName = 'dailyLogs_test';
+  const appSettingsBoxName = 'appSettings_test';
 
   setUpAll(() async {
     tempDir = await Directory.systemTemp.createTemp('hive_test_');
@@ -27,13 +27,6 @@ void main() {
         return null;
       },
     );
-  });
-
-  setUp(() async {
-    final suffix = DateTime.now().microsecondsSinceEpoch.toString();
-    habitsBoxName = 'habits_$suffix';
-    dailyLogsBoxName = 'dailyLogs_$suffix';
-    appSettingsBoxName = 'appSettings_$suffix';
 
     HiveBoxNames.habits = habitsBoxName;
     HiveBoxNames.dailyLogs = dailyLogsBoxName;
@@ -44,13 +37,16 @@ void main() {
     await Hive.openBox(appSettingsBoxName);
   });
 
+  setUp(() async {
+    await Hive.box(habitsBoxName).clear();
+    await Hive.box(dailyLogsBoxName).clear();
+    await Hive.box(appSettingsBoxName).clear();
+  });
+
   tearDown(() async {
-    await Hive.box(habitsBoxName).close();
-    await Hive.box(dailyLogsBoxName).close();
-    await Hive.box(appSettingsBoxName).close();
-    await Hive.deleteBoxFromDisk(habitsBoxName);
-    await Hive.deleteBoxFromDisk(dailyLogsBoxName);
-    await Hive.deleteBoxFromDisk(appSettingsBoxName);
+    await Hive.box(habitsBoxName).clear();
+    await Hive.box(dailyLogsBoxName).clear();
+    await Hive.box(appSettingsBoxName).clear();
   });
 
   tearDownAll(() async {
@@ -58,9 +54,6 @@ void main() {
     HiveBoxNames.dailyLogs = 'dailyLogs';
     HiveBoxNames.appSettings = 'appSettings';
     await Hive.close();
-    if (tempDir.existsSync()) {
-      await tempDir.delete(recursive: true);
-    }
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       null,
@@ -121,6 +114,39 @@ void main() {
     // Verify checkbox is now checked
     checkbox = tester.widget(find.byType(Checkbox));
     expect(checkbox.value, true);
+    expect(find.text('Test Habit'), findsOneWidget);
+    expect(find.textContaining('Completed ('), findsNothing);
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+
+    expect(find.text('Completed (1)'), findsOneWidget);
+    expect(find.text('Test Habit'), findsNothing);
+  });
+
+  testWidgets('Unchecking before delay keeps habit active', (
+    WidgetTester tester,
+  ) async {
+    final habit = Habit(
+      id: 'delay-cancel',
+      name: 'Delay Cancel Habit',
+      description: 'Should stay active if unchecked quickly',
+      createdAt: DateTime.now(),
+    );
+    await Hive.box(HiveBoxNames.habits).put(habit.id, habit.toMap());
+
+    await pumpHome(tester);
+
+    await tester.tap(find.byType(Checkbox));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.byType(Checkbox));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    final checkbox = tester.widget<Checkbox>(find.byType(Checkbox));
+    expect(checkbox.value, false);
+    expect(find.text('Delay Cancel Habit'), findsOneWidget);
+    expect(find.textContaining('Completed ('), findsNothing);
   });
 
   testWidgets('Archived habits are hidden from today list', (

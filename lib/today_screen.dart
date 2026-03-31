@@ -27,6 +27,7 @@ class TodayScreen extends StatefulWidget {
 }
 
 class _TodayScreenState extends State<TodayScreen> {
+  static const Duration _completionMoveDelay = Duration(seconds: 1);
   late Box _habitBox;
   late Box _dailyLogBox;
   late Box _settingsBox;
@@ -36,6 +37,7 @@ class _TodayScreenState extends State<TodayScreen> {
   Map<String, DailyLog> _dailyCompletionStatus = {};
   List<PausePeriod> _pausePeriods = [];
   final Map<PriorityLevel, bool> _expandedCompletedSections = {};
+  final Map<String, Timer> _pendingCompletionTimers = {};
   int _totalXp = 0;
   DateTime? _emergencyUnlockDate;
   Timer? _visibilityRefreshTimer;
@@ -59,6 +61,9 @@ class _TodayScreenState extends State<TodayScreen> {
   @override
   void dispose() {
     _visibilityRefreshTimer?.cancel();
+    for (final timer in _pendingCompletionTimers.values) {
+      timer.cancel();
+    }
     _habitListenable.removeListener(_loadHabits);
     _settingsListenable.removeListener(_loadPausePeriods);
     super.dispose();
@@ -199,20 +204,51 @@ class _TodayScreenState extends State<TodayScreen> {
     if (_isTodayPaused()) {
       return;
     }
+    final nextValue = newValue ?? false;
     String today = _formatDate(DateTime.now());
     DailyLog log =
         _dailyCompletionStatus[habit.id] ??
         DailyLog(date: today, habitId: habit.id);
     final wasCompleted = log.completed;
-    log.completed = newValue ?? false;
+
+    _pendingCompletionTimers.remove(habit.id)?.cancel();
+    log.completed = nextValue;
+
+    setState(() {
+      _dailyCompletionStatus[habit.id] = log;
+    });
+
+    if (!wasCompleted && nextValue) {
+      _pendingCompletionTimers[habit.id] = Timer(_completionMoveDelay, () async {
+        _pendingCompletionTimers.remove(habit.id);
+        await _dailyLogBox.put('${habit.id}_$today', log.toMap());
+        final updatedXp = await _tryAwardXpForCompletion(
+          habit,
+          wasCompleted,
+          log.completed,
+        );
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          if (updatedXp != null) {
+            _totalXp = updatedXp;
+          }
+        });
+      });
+      return;
+    }
+
     await _dailyLogBox.put('${habit.id}_$today', log.toMap());
     final updatedXp = await _tryAwardXpForCompletion(
       habit,
       wasCompleted,
       log.completed,
     );
+    if (!mounted) {
+      return;
+    }
     setState(() {
-      _dailyCompletionStatus[habit.id] = log;
       if (updatedXp != null) {
         _totalXp = updatedXp;
       }
@@ -838,6 +874,14 @@ class _TodayScreenState extends State<TodayScreen> {
     return _dailyCompletionStatus[habit.id]?.completed == true;
   }
 
+  bool _isHabitPendingCompletion(Habit habit) {
+    return _pendingCompletionTimers.containsKey(habit.id);
+  }
+
+  bool _isHabitShownAsCompletedToday(Habit habit) {
+    return _isHabitCompletedToday(habit) && !_isHabitPendingCompletion(habit);
+  }
+
   void _toggleCompletedSection(PriorityLevel level) {
     setState(() {
       _expandedCompletedSections[level] =
@@ -864,8 +908,10 @@ class _TodayScreenState extends State<TodayScreen> {
     } else if (habits.isEmpty) {
       widgets.add(_buildEmptyLevelCard(level));
     } else {
-      final activeHabits = habits.where((habit) => !_isHabitCompletedToday(habit));
-      final completedHabits = habits.where(_isHabitCompletedToday).toList();
+      final activeHabits = habits.where(
+        (habit) => !_isHabitShownAsCompletedToday(habit),
+      );
+      final completedHabits = habits.where(_isHabitShownAsCompletedToday).toList();
 
       for (final habit in activeHabits) {
         final log =
