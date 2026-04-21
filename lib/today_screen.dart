@@ -7,6 +7,7 @@ import 'package:habit_tracker/history_screen.dart';
 import 'package:habit_tracker/habit_details_screen.dart';
 import 'package:habit_tracker/manage_habits_screen.dart';
 import 'package:habit_tracker/models.dart';
+import 'package:habit_tracker/paused_sessions_screen.dart';
 import 'package:habit_tracker/reminder_service.dart';
 import 'package:habit_tracker/utils/habit_schedule_utils.dart'
     as schedule_utils;
@@ -200,6 +201,12 @@ class _TodayScreenState extends State<TodayScreen> {
     ).push(MaterialPageRoute(builder: (context) => const HistoryScreen()));
   }
 
+  void _openPausedSessions() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => const PausedSessionsScreen()),
+    );
+  }
+
   Future<void> _toggleHabitCompletion(Habit habit, bool? newValue) async {
     if (_isTodayPaused()) {
       return;
@@ -219,23 +226,26 @@ class _TodayScreenState extends State<TodayScreen> {
     });
 
     if (!wasCompleted && nextValue) {
-      _pendingCompletionTimers[habit.id] = Timer(_completionMoveDelay, () async {
-        _pendingCompletionTimers.remove(habit.id);
-        await _dailyLogBox.put('${habit.id}_$today', log.toMap());
-        final updatedXp = await _tryAwardXpForCompletion(
-          habit,
-          wasCompleted,
-          log.completed,
-        );
-        if (!mounted) {
-          return;
-        }
-        setState(() {
-          if (updatedXp != null) {
-            _totalXp = updatedXp;
+      _pendingCompletionTimers[habit.id] = Timer(
+        _completionMoveDelay,
+        () async {
+          _pendingCompletionTimers.remove(habit.id);
+          await _dailyLogBox.put('${habit.id}_$today', log.toMap());
+          final updatedXp = await _tryAwardXpForCompletion(
+            habit,
+            wasCompleted,
+            log.completed,
+          );
+          if (!mounted) {
+            return;
           }
-        });
-      });
+          setState(() {
+            if (updatedXp != null) {
+              _totalXp = updatedXp;
+            }
+          });
+        },
+      );
       return;
     }
 
@@ -664,6 +674,11 @@ class _TodayScreenState extends State<TodayScreen> {
             onPressed: _openPauseDialog,
           ),
           IconButton(
+            icon: const Icon(Icons.event_busy),
+            tooltip: 'Paused sessions',
+            onPressed: _openPausedSessions,
+          ),
+          IconButton(
             icon: const Icon(Icons.history),
             tooltip: 'History',
             onPressed: _openHistory,
@@ -911,19 +926,16 @@ class _TodayScreenState extends State<TodayScreen> {
       final activeHabits = habits.where(
         (habit) => !_isHabitShownAsCompletedToday(habit),
       );
-      final completedHabits = habits.where(_isHabitShownAsCompletedToday).toList();
+      final completedHabits = habits
+          .where(_isHabitShownAsCompletedToday)
+          .toList();
 
       for (final habit in activeHabits) {
         final log =
             _dailyCompletionStatus[habit.id] ??
             DailyLog(date: _formatDate(DateTime.now()), habitId: habit.id);
         widgets.add(
-          _buildHabitCard(
-            habit,
-            log,
-            isTodayPaused,
-            isCompleted: false,
-          ),
+          _buildHabitCard(habit, log, isTodayPaused, isCompleted: false),
         );
       }
 
@@ -941,10 +953,9 @@ class _TodayScreenState extends State<TodayScreen> {
         widgets.add(
           AnimatedCrossFade(
             duration: const Duration(milliseconds: 200),
-            crossFadeState:
-                (_expandedCompletedSections[level] ?? false)
-                    ? CrossFadeState.showFirst
-                    : CrossFadeState.showSecond,
+            crossFadeState: (_expandedCompletedSections[level] ?? false)
+                ? CrossFadeState.showFirst
+                : CrossFadeState.showSecond,
             firstChild: Column(
               children: completedHabits.map((habit) {
                 final log =
@@ -1144,9 +1155,7 @@ class _TodayScreenState extends State<TodayScreen> {
         );
       },
       child: Opacity(
-        opacity: isTodayPaused
-            ? 0.65
-            : (isCompleted ? 0.6 : 1),
+        opacity: isTodayPaused ? 0.65 : (isCompleted ? 0.6 : 1),
         child: Card(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Padding(

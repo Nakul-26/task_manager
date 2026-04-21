@@ -8,8 +8,15 @@ import 'package:hive/hive.dart';
 
 class AddEditHabitScreen extends StatefulWidget {
   final Habit? habit;
+  final Future<void> Function(Habit habit)? onHabitSaved;
+  final Future<void> Function(String habitId)? onHabitDeleted;
 
-  const AddEditHabitScreen({super.key, this.habit});
+  const AddEditHabitScreen({
+    super.key,
+    this.habit,
+    this.onHabitSaved,
+    this.onHabitDeleted,
+  });
 
   @override
   State<AddEditHabitScreen> createState() => _AddEditHabitScreenState();
@@ -191,8 +198,13 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
         archivedAt: widget.habit?.archivedAt,
         sortOrder: sortOrder,
       );
-      habitBox.put(newHabit.id, newHabit.toMap());
-      await ReminderService.instance.syncHabitReminder(newHabit);
+      await habitBox.put(newHabit.id, newHabit.toMap());
+      final onHabitSaved = widget.onHabitSaved;
+      if (onHabitSaved != null) {
+        await onHabitSaved(newHabit);
+      } else {
+        await ReminderService.instance.syncHabitReminder(newHabit);
+      }
       if (!mounted) {
         return;
       }
@@ -203,7 +215,12 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
   Future<void> _deleteHabit() async {
     final habitBox = Hive.box(HiveBoxNames.habits);
     await habitBox.delete(widget.habit!.id);
-    await ReminderService.instance.cancelHabitReminders(widget.habit!.id);
+    final onHabitDeleted = widget.onHabitDeleted;
+    if (onHabitDeleted != null) {
+      await onHabitDeleted(widget.habit!.id);
+    } else {
+      await ReminderService.instance.cancelHabitReminders(widget.habit!.id);
+    }
     if (!mounted) {
       return;
     }
