@@ -61,11 +61,6 @@ void main() {
   });
 
   Future<void> pumpHome(WidgetTester tester) async {
-    addTearDown(() async {
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump();
-    });
-
     await tester.pumpWidget(const MyApp());
     await tester.pump();
   }
@@ -111,6 +106,10 @@ void main() {
     await tester.tap(find.byType(Checkbox));
     await tester.pump();
 
+    expect(find.text('How well did you do this?'), findsOneWidget);
+    await tester.tap(find.text('Good'));
+    await tester.pump();
+
     // Verify checkbox is now checked
     checkbox = tester.widget(find.byType(Checkbox));
     expect(checkbox.value, true);
@@ -122,6 +121,14 @@ void main() {
 
     expect(find.text('Completed (1)'), findsOneWidget);
     expect(find.text('Test Habit'), findsNothing);
+
+    final today = DateTime.now();
+    final todayKey =
+        '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+    final logMap =
+        Hive.box(HiveBoxNames.dailyLogs).get('${habit.id}_$todayKey')
+            as Map<dynamic, dynamic>;
+    expect(logMap['quality'], 3);
   });
 
   testWidgets('Unchecking before delay keeps habit active', (
@@ -139,6 +146,8 @@ void main() {
 
     await tester.tap(find.byType(Checkbox));
     await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('Average'));
+    await tester.pump();
     await tester.tap(find.byType(Checkbox));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
@@ -245,12 +254,15 @@ void main() {
     await Hive.box(
       HiveBoxNames.habits,
     ).put(completedHabit.id, completedHabit.toMap());
-    await Hive.box(HiveBoxNames.dailyLogs).put('${completedHabit.id}_$todayKey', {
-      'date': todayKey,
-      'habitId': completedHabit.id,
-      'completed': true,
-      'count': null,
-    });
+    await Hive.box(HiveBoxNames.dailyLogs).put(
+      '${completedHabit.id}_$todayKey',
+      {
+        'date': todayKey,
+        'habitId': completedHabit.id,
+        'completed': true,
+        'count': null,
+      },
+    );
 
     await pumpHome(tester);
 
@@ -259,38 +271,43 @@ void main() {
     expect(find.text('Brush Teeth'), findsNothing);
   });
 
-  testWidgets('Completed habits expand when tapping completed header', (
-    WidgetTester tester,
-  ) async {
-    final today = DateTime.now();
-    final todayKey =
-        '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+  testWidgets(
+    'Completed habits expand when tapping completed header',
+    (WidgetTester tester) async {
+      final today = DateTime.now();
+      final todayKey =
+          '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
 
-    final completedHabit = Habit(
-      id: 'done-2',
-      name: 'Morning Walk',
-      description: 'Already done',
-      createdAt: today,
-    );
+      final completedHabit = Habit(
+        id: 'done-2',
+        name: 'Morning Walk',
+        description: 'Already done',
+        createdAt: today,
+      );
 
-    await Hive.box(
-      HiveBoxNames.habits,
-    ).put(completedHabit.id, completedHabit.toMap());
-    await Hive.box(HiveBoxNames.dailyLogs).put('${completedHabit.id}_$todayKey', {
-      'date': todayKey,
-      'habitId': completedHabit.id,
-      'completed': true,
-      'count': null,
-    });
+      await Hive.box(
+        HiveBoxNames.habits,
+      ).put(completedHabit.id, completedHabit.toMap());
+      await Hive.box(HiveBoxNames.dailyLogs).put(
+        '${completedHabit.id}_$todayKey',
+        {
+          'date': todayKey,
+          'habitId': completedHabit.id,
+          'completed': true,
+          'count': null,
+        },
+      );
 
-    await pumpHome(tester);
+      await pumpHome(tester);
 
-    expect(find.text('Morning Walk'), findsNothing);
+      expect(find.text('Morning Walk'), findsNothing);
 
-    await tester.tap(find.text('Completed (1)'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
+      await tester.tap(find.text('Completed (1)'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
 
-    expect(find.text('Morning Walk'), findsOneWidget);
-  }, timeout: const Timeout(Duration(seconds: 15)));
+      expect(find.text('Morning Walk'), findsOneWidget);
+    },
+    timeout: const Timeout(Duration(seconds: 15)),
+  );
 }

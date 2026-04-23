@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/models.dart';
+import 'package:habit_tracker/utils/habit_quality_utils.dart';
 import 'package:habit_tracker/utils/habit_schedule_utils.dart'
     as schedule_utils;
 import 'package:habit_tracker/utils/pause_utils.dart';
@@ -28,6 +29,13 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
   int _missedDays = 0;
   int _currentStreak = 0;
   int _longestStreak = 0;
+  double? _averageQuality;
+  double? _recentAverageQuality;
+  double? _previousAverageQuality;
+  int? _latestQuality;
+  int? _previousLoggedQuality;
+  int? _bestQuality;
+  HabitQualityTrend _qualityTrend = HabitQualityTrend.insufficientData;
 
   @override
   void initState() {
@@ -87,6 +95,36 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
     return effectiveStatsEnd;
   }
 
+  List<DailyLog> _getCompletedLogsForRange(
+    Map<String, DailyLog> logByDate,
+    DateTime endDate, {
+    required int days,
+  }) {
+    final logs = <DailyLog>[];
+    final normalizedEnd = _normalizeDate(endDate);
+    final startDate = normalizedEnd.subtract(Duration(days: days - 1));
+    DateTime date = startDate;
+    while (!date.isAfter(normalizedEnd)) {
+      if (isPausedOnDate(_pausePeriods, date) ||
+          !schedule_utils.isScheduledDay(widget.habit, date)) {
+        date = date.add(const Duration(days: 1));
+        continue;
+      }
+      final log = logByDate[_formatDate(date)];
+      if (log != null && log.completed) {
+        logs.add(log);
+      }
+      date = date.add(const Duration(days: 1));
+    }
+    return logs;
+  }
+
+  List<DailyLog> _getCompletedLogsInOrder(Map<String, DailyLog> logByDate) {
+    final logs = logByDate.values.where((log) => log.completed).toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+    return logs;
+  }
+
   void _loadLogs() {
     final start = _normalizeDate(widget.habit.startDate);
     _pausePeriods = loadPausePeriods(_settingsBox);
@@ -122,6 +160,13 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
       _successRate = 0;
       _currentStreak = 0;
       _longestStreak = 0;
+      _averageQuality = null;
+      _recentAverageQuality = null;
+      _previousAverageQuality = null;
+      _latestQuality = null;
+      _previousLoggedQuality = null;
+      _bestQuality = null;
+      _qualityTrend = HabitQualityTrend.insufficientData;
       setState(() {});
       return;
     }
@@ -146,6 +191,30 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
     _successRate = _totalDays > 0 ? (_completedDays / _totalDays) * 100 : 0;
     _currentStreak = _computeCurrentStreak(logByDate, statsEnd);
     _longestStreak = _computeLongestStreak(logByDate, statsEnd);
+    final completedLogs = _getCompletedLogsInOrder(logByDate);
+    _averageQuality = averageQuality(completedLogs);
+    final recentLogs = _getCompletedLogsForRange(logByDate, statsEnd, days: 7);
+    final previousLogs = _getCompletedLogsForRange(
+      logByDate,
+      statsEnd.subtract(const Duration(days: 7)),
+      days: 7,
+    );
+    _recentAverageQuality = averageQuality(recentLogs);
+    _previousAverageQuality = averageQuality(previousLogs);
+    _qualityTrend = calculateQualityTrend(
+      recentLogs: recentLogs,
+      previousLogs: previousLogs,
+    );
+    final ratedLogs = completedLogs
+        .where((log) => log.quality != null)
+        .toList();
+    _bestQuality = ratedLogs.isEmpty
+        ? null
+        : ratedLogs.map((log) => log.quality!).reduce((a, b) => a > b ? a : b);
+    _latestQuality = ratedLogs.isEmpty ? null : ratedLogs.last.quality;
+    _previousLoggedQuality = ratedLogs.length > 1
+        ? ratedLogs[ratedLogs.length - 2].quality
+        : null;
     setState(() {});
   }
 
@@ -209,6 +278,21 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
     return longest;
   }
 
+  String? _buildDailyFeedback() {
+    final latest = _latestQuality;
+    final previous = _previousLoggedQuality;
+    if (latest == null || previous == null) {
+      return null;
+    }
+    if (latest > previous) {
+      return 'Better than last time';
+    }
+    if (latest < previous) {
+      return 'Worse than last time';
+    }
+    return 'Same as last time';
+  }
+
   @override
   Widget build(BuildContext context) {
     final normalizedStartDate = _normalizeDate(widget.habit.startDate);
@@ -223,6 +307,7 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
     final calendarLastDay = normalizedStartDate.isAfter(effectiveToday)
         ? normalizedStartDate
         : effectiveToday;
+    final dailyFeedback = _buildDailyFeedback();
 
     return Scaffold(
       appBar: AppBar(
@@ -232,140 +317,153 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
           overflow: TextOverflow.ellipsis,
         ),
       ),
-      body: Padding(
+      body: ListView(
         padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        children: [
+          Text(widget.habit.description, style: const TextStyle(fontSize: 18)),
+          const SizedBox(height: 20),
+          Text(
+            'Success Rate: ${_successRate.toStringAsFixed(2)}%',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            _averageQuality == null
+                ? 'Average Quality: Unrated'
+                : 'Average Quality: ${_averageQuality!.toStringAsFixed(1)} / 4',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text('Trend: ${qualityTrendLabel(_qualityTrend)}'),
+          if (_recentAverageQuality != null)
             Text(
-              widget.habit.description,
-              style: const TextStyle(fontSize: 18),
+              'Last 7 days: ${_recentAverageQuality!.toStringAsFixed(1)} / 4',
             ),
-            const SizedBox(height: 20),
+          if (_previousAverageQuality != null)
             Text(
-              'Success Rate: ${_successRate.toStringAsFixed(2)}%',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              'Previous 7 days: ${_previousAverageQuality!.toStringAsFixed(1)} / 4',
             ),
-            const SizedBox(height: 20),
-            Text('Start Date: ${_formatDate(normalizedStartDate)}'),
-            if (normalizedEndDate != null)
-              Text('End Date: ${_formatDate(normalizedEndDate)}'),
-            Text('Completed Days: $_completedDays'),
-            Text('Missed Days: $_missedDays'),
-            Text('Current Streak: $_currentStreak'),
-            Text('Longest Streak: $_longestStreak'),
-            const SizedBox(height: 20),
-            TableCalendar(
-              firstDay: normalizedStartDate,
-              lastDay: calendarLastDay,
-              focusedDay: calendarLastDay,
-              calendarStyle: CalendarStyle(
-                todayDecoration: BoxDecoration(
-                  // ignore: deprecated_member_use
-                  color: widget.habit.color.withOpacity(0.25),
-                  shape: BoxShape.circle,
-                ),
-                selectedDecoration: BoxDecoration(
-                  color: widget.habit.color,
-                  shape: BoxShape.circle,
-                ),
-                markerDecoration: BoxDecoration(
-                  color: widget.habit.color,
-                  shape: BoxShape.circle,
-                ),
+          if (_bestQuality != null)
+            Text('Best quality ever: ${qualityLabel(_bestQuality!)}'),
+          if (dailyFeedback != null) Text(dailyFeedback),
+          const SizedBox(height: 20),
+          Text('Start Date: ${_formatDate(normalizedStartDate)}'),
+          if (normalizedEndDate != null)
+            Text('End Date: ${_formatDate(normalizedEndDate)}'),
+          Text('Completed Days: $_completedDays'),
+          Text('Missed Days: $_missedDays'),
+          Text('Current Streak: $_currentStreak'),
+          Text('Longest Streak: $_longestStreak'),
+          const SizedBox(height: 20),
+          TableCalendar(
+            firstDay: normalizedStartDate,
+            lastDay: calendarLastDay,
+            focusedDay: calendarLastDay,
+            calendarStyle: CalendarStyle(
+              todayDecoration: BoxDecoration(
+                // ignore: deprecated_member_use
+                color: widget.habit.color.withOpacity(0.25),
+                shape: BoxShape.circle,
               ),
-              calendarBuilders: CalendarBuilders(
-                markerBuilder: (context, day, events) {
-                  final normalizedDay = _normalizeDate(day);
-                  if (events.isEmpty &&
-                      (_pausedEvents[normalizedDay]?.isEmpty ?? true)) {
-                    return const SizedBox.shrink();
-                  }
-                  return Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (_pausedEvents[normalizedDay]?.isNotEmpty ?? false)
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: const BoxDecoration(
-                              color: Colors.orange,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        if ((_pausedEvents[normalizedDay]?.isNotEmpty ??
-                                false) &&
-                            events.isNotEmpty)
-                          const SizedBox(width: 4),
-                        if (events.isNotEmpty)
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: BoxDecoration(
-                              color: widget.habit.color,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                      ],
-                    ),
-                  );
-                },
-                defaultBuilder: (context, day, focusedDay) {
-                  final normalizedDay = _normalizeDate(day);
-                  if (!(_pausedEvents[normalizedDay]?.isNotEmpty ?? false)) {
-                    return null;
-                  }
-                  return Center(
-                    child: Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.orange.shade300),
-                      ),
-                    ),
-                  );
-                },
+              selectedDecoration: BoxDecoration(
+                color: widget.habit.color,
+                shape: BoxShape.circle,
               ),
-              eventLoader: (day) {
-                final key = _normalizeDate(day);
-                return _completedEvents[key] ?? [];
+              markerDecoration: BoxDecoration(
+                color: widget.habit.color,
+                shape: BoxShape.circle,
+              ),
+            ),
+            calendarBuilders: CalendarBuilders(
+              markerBuilder: (context, day, events) {
+                final normalizedDay = _normalizeDate(day);
+                if (events.isEmpty &&
+                    (_pausedEvents[normalizedDay]?.isEmpty ?? true)) {
+                  return const SizedBox.shrink();
+                }
+                return Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_pausedEvents[normalizedDay]?.isNotEmpty ?? false)
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(
+                            color: Colors.orange,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      if ((_pausedEvents[normalizedDay]?.isNotEmpty ?? false) &&
+                          events.isNotEmpty)
+                        const SizedBox(width: 4),
+                      if (events.isNotEmpty)
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: widget.habit.color,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+              defaultBuilder: (context, day, focusedDay) {
+                final normalizedDay = _normalizeDate(day);
+                if (!(_pausedEvents[normalizedDay]?.isNotEmpty ?? false)) {
+                  return null;
+                }
+                return Center(
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.orange.shade300),
+                    ),
+                  ),
+                );
               },
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: widget.habit.color,
-                    shape: BoxShape.circle,
-                  ),
+            eventLoader: (day) {
+              final key = _normalizeDate(day);
+              return _completedEvents[key] ?? [];
+            },
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: widget.habit.color,
+                  shape: BoxShape.circle,
                 ),
-                const SizedBox(width: 8),
-                const Text('Completed day'),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: Colors.orange,
-                    shape: BoxShape.circle,
-                  ),
+              ),
+              const SizedBox(width: 8),
+              const Text('Completed day'),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: Colors.orange,
+                  shape: BoxShape.circle,
                 ),
-                const SizedBox(width: 8),
-                const Text('Paused day'),
-              ],
-            ),
-          ],
-        ),
+              ),
+              const SizedBox(width: 8),
+              const Text('Paused day'),
+            ],
+          ),
+        ],
       ),
     );
   }

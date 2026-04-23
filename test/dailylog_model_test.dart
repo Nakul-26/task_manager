@@ -8,6 +8,7 @@ void main() {
       habitId: 'habit-1',
       completed: true,
       count: 5,
+      quality: 3,
     );
 
     final map = log.toMap();
@@ -17,5 +18,6 @@ void main() {
     expect(newLog.habitId, 'habit-1');
     expect(newLog.completed, true);
     expect(newLog.count, 5);
+    expect(newLog.quality, 3);
   });
 }

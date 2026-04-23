@@ -9,6 +9,7 @@ import 'package:habit_tracker/manage_habits_screen.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/paused_sessions_screen.dart';
 import 'package:habit_tracker/reminder_service.dart';
+import 'package:habit_tracker/utils/habit_quality_utils.dart';
 import 'package:habit_tracker/utils/habit_schedule_utils.dart'
     as schedule_utils;
 import 'package:habit_tracker/utils/habit_visibility_utils.dart';
@@ -18,7 +19,6 @@ import 'package:hive_flutter/hive_flutter.dart';
 const String _priorityXpKey = 'priorityXp';
 const String _priorityEmergencyUnlockKey = 'priorityEmergencyUnlockDate';
 const double _priorityUnlockThreshold = 0.75;
-const int _todayFocusTarget = 3;
 
 class TodayScreen extends StatefulWidget {
   const TodayScreen({super.key});
@@ -218,6 +218,19 @@ class _TodayScreenState extends State<TodayScreen> {
         DailyLog(date: today, habitId: habit.id);
     final wasCompleted = log.completed;
 
+    if (!wasCompleted && nextValue) {
+      final quality = await _promptForQuality(
+        habit,
+        initialQuality: log.quality,
+      );
+      if (!mounted || quality == null) {
+        return;
+      }
+      log.quality = quality;
+    } else if (!nextValue) {
+      log.quality = null;
+    }
+
     _pendingCompletionTimers.remove(habit.id)?.cancel();
     log.completed = nextValue;
 
@@ -276,6 +289,17 @@ class _TodayScreenState extends State<TodayScreen> {
     log.count = (log.count ?? 0) + 1;
     final wasCompleted = log.completed;
     if (habit.timesPerDay != null && log.count! >= habit.timesPerDay!) {
+      if (!wasCompleted) {
+        final quality = await _promptForQuality(
+          habit,
+          initialQuality: log.quality,
+        );
+        if (!mounted || quality == null) {
+          log.count = log.count! - 1;
+          return;
+        }
+        log.quality = quality;
+      }
       log.completed = true;
     }
     await _dailyLogBox.put('${habit.id}_$today', log.toMap());
@@ -304,6 +328,7 @@ class _TodayScreenState extends State<TodayScreen> {
     final wasCompleted = log.completed;
     if (habit.timesPerDay != null && log.count! < habit.timesPerDay!) {
       log.completed = false;
+      log.quality = null;
     }
     await _dailyLogBox.put('${habit.id}_$today', log.toMap());
     final updatedXp = await _tryAwardXpForCompletion(
@@ -334,6 +359,16 @@ class _TodayScreenState extends State<TodayScreen> {
     final nextTotal = _totalXp + reward;
     await _settingsBox.put(_priorityXpKey, nextTotal);
     return nextTotal;
+  }
+
+  Future<int?> _promptForQuality(Habit habit, {int? initialQuality}) {
+    return showDialog<int>(
+      context: context,
+      builder: (_) => _QualityRatingDialog(
+        habitName: habit.name,
+        initialQuality: initialQuality,
+      ),
+    );
   }
 
   Future<void> _startHabitTimer(Habit habit) async {
@@ -377,6 +412,59 @@ class _TodayScreenState extends State<TodayScreen> {
     }
     final log = DailyLog.fromMap(Map<String, dynamic>.from(logMap));
     return log.completed;
+  }
+
+  List<DailyLog> _getCompletedLogsForRange(
+    Habit habit,
+    DateTime endDate, {
+    required int days,
+  }) {
+    final logs = <DailyLog>[];
+    final normalizedEnd = _normalizeDate(endDate);
+    final startDate = normalizedEnd.subtract(Duration(days: days - 1));
+    DateTime date = startDate;
+    while (!date.isAfter(normalizedEnd)) {
+      if (_isPaused(date) || !schedule_utils.isScheduledDay(habit, date)) {
+        date = date.add(const Duration(days: 1));
+        continue;
+      }
+      final dateString = _formatDate(date);
+      final logMap = _dailyLogBox.get('${habit.id}_$dateString');
+      if (logMap != null) {
+        final log = DailyLog.fromMap(Map<String, dynamic>.from(logMap));
+        if (log.completed) {
+          logs.add(log);
+        }
+      }
+      date = date.add(const Duration(days: 1));
+    }
+    return logs;
+  }
+
+  double? _getAverageQuality(Habit habit) {
+    final logs = _dailyLogBox.values
+        .map(
+          (entry) => DailyLog.fromMap(Map<String, dynamic>.from(entry as Map)),
+        )
+        .where((log) => log.habitId == habit.id);
+    return averageQuality(logs);
+  }
+
+  HabitQualityTrend _getQualityTrend(Habit habit) {
+    final endDate = _getStatsEndDate(habit);
+    if (endDate == null) {
+      return HabitQualityTrend.insufficientData;
+    }
+    final recentLogs = _getCompletedLogsForRange(habit, endDate, days: 7);
+    final previousLogs = _getCompletedLogsForRange(
+      habit,
+      endDate.subtract(const Duration(days: 7)),
+      days: 7,
+    );
+    return calculateQualityTrend(
+      recentLogs: recentLogs,
+      previousLogs: previousLogs,
+    );
   }
 
   DateTime? _getStatsEndDate(Habit habit) {
@@ -539,34 +627,37 @@ class _TodayScreenState extends State<TodayScreen> {
             }
 
             return AlertDialog(
+              scrollable: true,
               title: const Text('Pause Tracking'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Start date'),
-                    subtitle: Text(_formatHumanDate(context, startDate)),
-                    trailing: const Icon(Icons.calendar_today),
-                    onTap: pickStartDate,
-                  ),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('End date'),
-                    subtitle: Text(_formatHumanDate(context, endDate)),
-                    trailing: const Icon(Icons.calendar_today),
-                    onTap: pickEndDate,
-                  ),
-                  TextField(
-                    controller: descriptionController,
-                    maxLines: 3,
-                    decoration: const InputDecoration(
-                      labelText: 'Reason',
-                      hintText: 'Exams, travel, vacation, recovery...',
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Start date'),
+                      subtitle: Text(_formatHumanDate(context, startDate)),
+                      trailing: const Icon(Icons.calendar_today),
+                      onTap: pickStartDate,
                     ),
-                  ),
-                ],
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('End date'),
+                      subtitle: Text(_formatHumanDate(context, endDate)),
+                      trailing: const Icon(Icons.calendar_today),
+                      onTap: pickEndDate,
+                    ),
+                    TextField(
+                      controller: descriptionController,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Reason',
+                        hintText: 'Exams, travel, vacation, recovery...',
+                      ),
+                    ),
+                  ],
+                ),
               ),
               actions: [
                 TextButton(
@@ -745,10 +836,9 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   Widget _buildFocusCard(_PriorityLevelStats coreStats) {
-    final target = math.min(coreStats.total, _todayFocusTarget);
-    final focusText = target == 0
-        ? 'Add a Core task to lock in today\'s focus.'
-        : 'Complete $target core tasks first (${coreStats.completed}/${coreStats.total} done).';
+    final focusText = coreStats.total == 0
+        ? 'No core habits scheduled for today.'
+        : 'Core habits: ${coreStats.completed}/${coreStats.total} done.';
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Card(
@@ -1146,6 +1236,9 @@ class _TodayScreenState extends State<TodayScreen> {
     bool isTodayPaused, {
     bool isCompleted = false,
   }) {
+    final averageQualityValue = _getAverageQuality(habit);
+    final qualityTrend = _getQualityTrend(habit);
+
     return GestureDetector(
       onTap: () {
         Navigator.of(context).push(
@@ -1214,6 +1307,28 @@ class _TodayScreenState extends State<TodayScreen> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Text(
+                            averageQualityValue == null
+                                ? 'Avg: Unrated'
+                                : 'Avg: ${averageQualityValue.toStringAsFixed(1)} / 4',
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Text(
+                              qualityTrendLabel(qualityTrend),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (log.completed && log.quality != null) ...[
+                        const SizedBox(height: 6),
+                        Text('Today: ${qualityLabel(log.quality!)}'),
+                      ],
                       if (isTodayPaused) ...[
                         const SizedBox(height: 8),
                         const Text('Tracking paused today'),
@@ -1284,6 +1399,49 @@ class _TodayScreenState extends State<TodayScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _QualityRatingDialog extends StatelessWidget {
+  final String habitName;
+  final int? initialQuality;
+
+  const _QualityRatingDialog({required this.habitName, this.initialQuality});
+
+  @override
+  Widget build(BuildContext context) {
+    final options = <int>[1, 2, 3, 4];
+    return AlertDialog(
+      title: const Text('Completed!'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(habitName, style: const TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 12),
+          const Text('How well did you do this?'),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: options.map((quality) {
+              final selected = quality == initialQuality;
+              return ChoiceChip(
+                label: Text(qualityLabel(quality)),
+                selected: selected,
+                onSelected: (_) => Navigator.of(context).pop(quality),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+      ],
     );
   }
 }

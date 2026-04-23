@@ -227,12 +227,14 @@ class DailyLog {
   late String habitId;
   late bool completed;
   late int? count; // for counted habits
+  late int? quality; // 1 to 4
 
   DailyLog({
     required this.date,
     required this.habitId,
     this.completed = false,
     this.count,
+    this.quality,
   });
 
   Map<String, dynamic> toMap() {
@@ -241,6 +243,7 @@ class DailyLog {
       'habitId': habitId,
       'completed': completed,
       'count': count,
+      'quality': quality,
     };
   }
 
@@ -250,6 +253,7 @@ class DailyLog {
       habitId: map['habitId'],
       completed: map['completed'] ?? false,
       count: map['count'],
+      quality: map['quality'],
     );
   }
 }
