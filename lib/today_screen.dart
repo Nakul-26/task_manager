@@ -866,12 +866,6 @@ class _TodayScreenState extends State<TodayScreen> {
     Map<PriorityLevel, _PriorityLevelStats> stats,
   ) {
     final notifications = <Widget>[];
-    if ((stats[PriorityLevel.core]?.total ?? 0) > 0 &&
-        _isLevelUnlocked(PriorityLevel.secondary, stats)) {
-      notifications.add(
-        _buildUnlockBanner('👉 Core tasks done — Side tasks unlocked'),
-      );
-    }
     if ((stats[PriorityLevel.secondary]?.total ?? 0) > 0 &&
         _isLevelUnlocked(PriorityLevel.optional, stats)) {
       notifications.add(
@@ -960,7 +954,7 @@ class _TodayScreenState extends State<TodayScreen> {
     PriorityLevel level,
     Map<PriorityLevel, _PriorityLevelStats> stats,
   ) {
-    if (level == PriorityLevel.core) {
+    if (level == PriorityLevel.core || level == PriorityLevel.secondary) {
       return true;
     }
     if (_isEmergencyUnlockActive) {

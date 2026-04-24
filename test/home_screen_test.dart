@@ -86,6 +86,24 @@ void main() {
     expect(find.text('Test Habit'), findsOneWidget);
   });
 
+  testWidgets('Secondary habits are visible without core completion', (
+    WidgetTester tester,
+  ) async {
+    final habit = Habit(
+      id: 'secondary-1',
+      name: 'Read',
+      description: 'A secondary habit',
+      priorityLevel: PriorityLevel.secondary,
+      createdAt: DateTime.now(),
+    );
+    await Hive.box(HiveBoxNames.habits).put(habit.id, habit.toMap());
+
+    await pumpHome(tester);
+
+    expect(find.text('Read'), findsOneWidget);
+    expect(find.textContaining('unlock'), findsNothing);
+  });
+
   testWidgets('Mark habit as completed', (WidgetTester tester) async {
     // Add a habit to the box
     final habit = Habit(
