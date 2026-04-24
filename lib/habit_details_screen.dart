@@ -359,6 +359,7 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
             firstDay: normalizedStartDate,
             lastDay: calendarLastDay,
             focusedDay: calendarLastDay,
+            availableGestures: AvailableGestures.horizontalSwipe,
             calendarStyle: CalendarStyle(
               todayDecoration: BoxDecoration(
                 // ignore: deprecated_member_use
