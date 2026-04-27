@@ -455,11 +455,11 @@ class _TodayScreenState extends State<TodayScreen> {
     if (endDate == null) {
       return HabitQualityTrend.insufficientData;
     }
-    final recentLogs = _getCompletedLogsForRange(habit, endDate, days: 7);
+    final recentLogs = _getCompletedLogsForRange(habit, endDate, days: 14);
     final previousLogs = _getCompletedLogsForRange(
       habit,
-      endDate.subtract(const Duration(days: 7)),
-      days: 7,
+      endDate.subtract(const Duration(days: 14)),
+      days: 14,
     );
     return calculateQualityTrend(
       recentLogs: recentLogs,
@@ -1311,10 +1311,32 @@ class _TodayScreenState extends State<TodayScreen> {
                           ),
                           const SizedBox(width: 16),
                           Expanded(
-                            child: Text(
-                              qualityTrendLabel(qualityTrend),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: qualityTrendColor(
+                                  qualityTrend,
+                                ).withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: qualityTrendColor(
+                                    qualityTrend,
+                                  ).withOpacity(0.5),
+                                ),
+                              ),
+                              child: Text(
+                                qualityTrendLabel(qualityTrend),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: qualityTrendColor(qualityTrend),
+                                ),
+                              ),
                             ),
                           ),
                         ],

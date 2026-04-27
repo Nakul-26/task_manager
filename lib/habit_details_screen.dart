@@ -193,11 +193,11 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
     _longestStreak = _computeLongestStreak(logByDate, statsEnd);
     final completedLogs = _getCompletedLogsInOrder(logByDate);
     _averageQuality = averageQuality(completedLogs);
-    final recentLogs = _getCompletedLogsForRange(logByDate, statsEnd, days: 7);
+    final recentLogs = _getCompletedLogsForRange(logByDate, statsEnd, days: 14);
     final previousLogs = _getCompletedLogsForRange(
       logByDate,
-      statsEnd.subtract(const Duration(days: 7)),
-      days: 7,
+      statsEnd.subtract(const Duration(days: 14)),
+      days: 14,
     );
     _recentAverageQuality = averageQuality(recentLogs);
     _previousAverageQuality = averageQuality(previousLogs);
@@ -334,14 +334,39 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
-          Text('Trend: ${qualityTrendLabel(_qualityTrend)}'),
+          Row(
+            children: [
+              const Text('Trend: '),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 2,
+                ),
+                decoration: BoxDecoration(
+                  color: qualityTrendColor(_qualityTrend).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: qualityTrendColor(_qualityTrend).withOpacity(0.5),
+                  ),
+                ),
+                child: Text(
+                  qualityTrendLabel(_qualityTrend),
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: qualityTrendColor(_qualityTrend),
+                  ),
+                ),
+              ),
+            ],
+          ),
           if (_recentAverageQuality != null)
             Text(
-              'Last 7 days: ${_recentAverageQuality!.toStringAsFixed(1)} / 4',
+              'Last 14 days: ${_recentAverageQuality!.toStringAsFixed(1)} / 4',
             ),
           if (_previousAverageQuality != null)
             Text(
-              'Previous 7 days: ${_previousAverageQuality!.toStringAsFixed(1)} / 4',
+              'Previous 14 days: ${_previousAverageQuality!.toStringAsFixed(1)} / 4',
             ),
           if (_bestQuality != null)
             Text('Best quality ever: ${qualityLabel(_bestQuality!)}'),

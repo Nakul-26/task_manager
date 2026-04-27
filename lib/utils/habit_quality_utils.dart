@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:habit_tracker/models.dart';
 
 enum HabitQualityTrend { improving, stable, declining, insufficientData }
@@ -27,6 +28,19 @@ String qualityTrendLabel(HabitQualityTrend trend) {
       return 'Needs improvement';
     case HabitQualityTrend.insufficientData:
       return 'Build more data';
+  }
+}
+
+Color qualityTrendColor(HabitQualityTrend trend) {
+  switch (trend) {
+    case HabitQualityTrend.improving:
+      return Colors.green;
+    case HabitQualityTrend.stable:
+      return Colors.blue;
+    case HabitQualityTrend.declining:
+      return Colors.orange;
+    case HabitQualityTrend.insufficientData:
+      return Colors.grey;
   }
 }
 
