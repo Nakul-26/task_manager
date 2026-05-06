@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:hive/hive.dart';
@@ -17,7 +18,9 @@ class ReminderService {
   static const int _notificationsPerHabit = 100;
   static const int _oddEvenSchedules = 60;
   static const String _channelId = 'habit_reminders';
-  static const bool _isTestEnvironment = bool.fromEnvironment('FLUTTER_TEST');
+  static final bool _isTestEnvironment =
+      const bool.fromEnvironment('FLUTTER_TEST') ||
+      Platform.environment.containsKey('FLUTTER_TEST');
 
   final FlutterLocalNotificationsPlugin _notifications =
       FlutterLocalNotificationsPlugin();
@@ -34,10 +37,11 @@ class ReminderService {
 
     tz.initializeTimeZones();
     try {
-      final timezoneName = await FlutterTimezone.getLocalTimezone();
+      final timezoneName = await FlutterTimezone.getLocalTimezone()
+          .timeout(const Duration(seconds: 2));
       tz.setLocalLocation(tz.getLocation(timezoneName));
     } catch (_) {
-      // Fallback to default timezone location if device timezone lookup fails.
+      // Fallback to default timezone location if device timezone lookup fails or times out.
     }
 
     const androidSettings = AndroidInitializationSettings(

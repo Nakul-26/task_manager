@@ -28,6 +28,14 @@ void main() {
         return null;
       },
     );
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('flutter_timezone'),
+      (MethodCall methodCall) async => 'UTC',
+    );
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('dexterous.com/flutter/local_notifications'),
+      (MethodCall methodCall) async => null,
+    );
 
     HiveBoxNames.habits = habitsBoxName;
     HiveBoxNames.dailyLogs = dailyLogsBoxName;
@@ -49,6 +57,9 @@ void main() {
     HiveBoxNames.dailyLogs = 'dailyLogs';
     HiveBoxNames.appSettings = 'appSettings';
     await Hive.close();
+    if (tempDir.existsSync()) {
+      await tempDir.delete(recursive: true);
+    }
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       null,
@@ -109,7 +120,5 @@ void main() {
       expect(find.text('No paused sessions'), findsOneWidget);
       expect(loadPausePeriods(Hive.box(HiveBoxNames.appSettings)), isEmpty);
     },
-    // Temporarily skipped while isolating slow widget-test behavior.
-    skip: true,
   );
 }

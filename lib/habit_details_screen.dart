@@ -343,10 +343,10 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
                   vertical: 2,
                 ),
                 decoration: BoxDecoration(
-                  color: qualityTrendColor(_qualityTrend).withOpacity(0.1),
+                  color: qualityTrendColor(_qualityTrend).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(4),
                   border: Border.all(
-                    color: qualityTrendColor(_qualityTrend).withOpacity(0.5),
+                    color: qualityTrendColor(_qualityTrend).withValues(alpha: 0.5),
                   ),
                 ),
                 child: Text(
@@ -387,8 +387,7 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
             availableGestures: AvailableGestures.horizontalSwipe,
             calendarStyle: CalendarStyle(
               todayDecoration: BoxDecoration(
-                // ignore: deprecated_member_use
-                color: widget.habit.color.withOpacity(0.25),
+                color: widget.habit.color.withValues(alpha: 0.25),
                 shape: BoxShape.circle,
               ),
               selectedDecoration: BoxDecoration(

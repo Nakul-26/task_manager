@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/history_screen.dart';
 import 'package:habit_tracker/habit_details_screen.dart';
@@ -15,6 +17,7 @@ import 'package:habit_tracker/utils/habit_schedule_utils.dart'
 import 'package:habit_tracker/utils/habit_visibility_utils.dart';
 import 'package:habit_tracker/utils/pause_utils.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 
 const String _priorityXpKey = 'priorityXp';
 const String _priorityEmergencyUnlockKey = 'priorityEmergencyUnlockDate';
@@ -74,6 +77,16 @@ class _TodayScreenState extends State<TodayScreen> {
     return schedule_utils.normalizeDate(date);
   }
 
+  void _applyRuleSnapshot(DailyLog log, Habit habit) {
+    final rule = habit.currentRule;
+    log.type = rule.type;
+    log.frequency = rule.frequency;
+    log.daysOfWeek = rule.daysOfWeek == null
+        ? null
+        : List<int>.from(rule.daysOfWeek!);
+    log.timesPerDay = rule.timesPerDay;
+  }
+
   Future<void> _loadHabits() async {
     final allHabits = _habitBox.values
         .map((e) => Habit.fromMap(Map<String, dynamic>.from(e)))
@@ -118,7 +131,8 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   void _startVisibilityRefreshTimer() {
-    if (const bool.fromEnvironment('FLUTTER_TEST')) {
+    if (const bool.fromEnvironment('FLUTTER_TEST') ||
+        (!kIsWeb && Platform.environment.containsKey('FLUTTER_TEST'))) {
       return;
     }
     _visibilityRefreshTimer?.cancel();
@@ -181,10 +195,12 @@ class _TodayScreenState extends State<TodayScreen> {
           Map<String, dynamic>.from(logMap),
         );
       } else {
-        _dailyCompletionStatus[habit.id] = DailyLog(
+        final log = DailyLog(
           date: today,
           habitId: habit.id,
         );
+        _applyRuleSnapshot(log, habit);
+        _dailyCompletionStatus[habit.id] = log;
       }
     }
   }
@@ -193,6 +209,122 @@ class _TodayScreenState extends State<TodayScreen> {
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (context) => const ManageHabitsScreen()));
+  }
+
+  Future<void> _openTodayExportMenu() async {
+    final action = await showModalBottomSheet<_TodayExportAction>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.copy),
+                title: const Text('Copy today list'),
+                subtitle: const Text('Paste it into Notes or chat'),
+                onTap: () => Navigator.of(sheetContext).pop(
+                  _TodayExportAction.copy,
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.ios_share),
+                title: const Text('Share today list'),
+                subtitle: const Text('Send it to Notes, Keep, or email'),
+                onTap: () => Navigator.of(sheetContext).pop(
+                  _TodayExportAction.share,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    switch (action) {
+      case _TodayExportAction.copy:
+        await _copyTodayList();
+        break;
+      case _TodayExportAction.share:
+        await _shareTodayList();
+        break;
+      case null:
+        break;
+    }
+  }
+
+  String _formatChecklistDate(DateTime date) {
+    const months = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+
+  String _buildTodayChecklistText() {
+    final today = _normalizeDate(DateTime.now());
+    final groups = _buildPriorityGroups();
+    final buffer = StringBuffer()
+      ..writeln("Today's Habits - ${_formatChecklistDate(today)}");
+
+    if (_isTodayPaused()) {
+      buffer.writeln('Tracking paused today.');
+    }
+
+    for (final level in PriorityLevel.values) {
+      final habits = groups[level] ?? const <Habit>[];
+      if (habits.isEmpty) {
+        continue;
+      }
+      buffer
+        ..writeln()
+        ..writeln(level.displayName.toUpperCase());
+      for (final habit in habits) {
+        final log = _dailyCompletionStatus[habit.id];
+        final isCompleted = _isHabitShownAsCompletedToday(habit);
+        final marker = isCompleted ? '[x]' : '[ ]';
+        final countSuffix = habit.type == HabitType.counted &&
+                habit.timesPerDay != null
+            ? ' (${log?.count ?? 0}/${habit.timesPerDay})'
+            : '';
+        buffer.writeln('$marker ${habit.name}$countSuffix');
+      }
+    }
+
+    return buffer.toString().trimRight();
+  }
+
+  Future<void> _copyTodayList() async {
+    await Clipboard.setData(
+      ClipboardData(text: _buildTodayChecklistText()),
+    );
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Today list copied to clipboard.')),
+    );
+  }
+
+  Future<void> _shareTodayList() async {
+    await SharePlus.instance.share(
+      ShareParams(
+        text: _buildTodayChecklistText(),
+        title: "Today's habits",
+        subject: "Today's habits",
+      ),
+    );
   }
 
   void _openHistory() {
@@ -216,6 +348,7 @@ class _TodayScreenState extends State<TodayScreen> {
     DailyLog log =
         _dailyCompletionStatus[habit.id] ??
         DailyLog(date: today, habitId: habit.id);
+    _applyRuleSnapshot(log, habit);
     final wasCompleted = log.completed;
 
     if (!wasCompleted && nextValue) {
@@ -243,6 +376,7 @@ class _TodayScreenState extends State<TodayScreen> {
         _completionMoveDelay,
         () async {
           _pendingCompletionTimers.remove(habit.id);
+          _applyRuleSnapshot(log, habit);
           await _dailyLogBox.put('${habit.id}_$today', log.toMap());
           final updatedXp = await _tryAwardXpForCompletion(
             habit,
@@ -286,6 +420,7 @@ class _TodayScreenState extends State<TodayScreen> {
     DailyLog log =
         _dailyCompletionStatus[habit.id] ??
         DailyLog(date: today, habitId: habit.id);
+    _applyRuleSnapshot(log, habit);
     log.count = (log.count ?? 0) + 1;
     final wasCompleted = log.completed;
     if (habit.timesPerDay != null && log.count! >= habit.timesPerDay!) {
@@ -324,6 +459,7 @@ class _TodayScreenState extends State<TodayScreen> {
     DailyLog log =
         _dailyCompletionStatus[habit.id] ??
         DailyLog(date: today, habitId: habit.id);
+    _applyRuleSnapshot(log, habit);
     log.count = (log.count ?? 0) > 0 ? (log.count! - 1) : 0;
     final wasCompleted = log.completed;
     if (habit.timesPerDay != null && log.count! < habit.timesPerDay!) {
@@ -755,6 +891,11 @@ class _TodayScreenState extends State<TodayScreen> {
       appBar: AppBar(
         title: const Text('Today\'s Habits'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.ios_share),
+            tooltip: 'Export today list',
+            onPressed: _openTodayExportMenu,
+          ),
           IconButton(
             icon: Icon(
               isTodayPaused
@@ -1319,12 +1460,12 @@ class _TodayScreenState extends State<TodayScreen> {
                               decoration: BoxDecoration(
                                 color: qualityTrendColor(
                                   qualityTrend,
-                                ).withOpacity(0.1),
+                                ).withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(4),
                                 border: Border.all(
                                   color: qualityTrendColor(
                                     qualityTrend,
-                                  ).withOpacity(0.5),
+                                  ).withValues(alpha: 0.5),
                                 ),
                               ),
                               child: Text(
@@ -1418,6 +1559,8 @@ class _TodayScreenState extends State<TodayScreen> {
     );
   }
 }
+
+enum _TodayExportAction { copy, share }
 
 class _QualityRatingDialog extends StatelessWidget {
   final String habitName;

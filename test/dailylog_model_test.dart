@@ -9,6 +9,10 @@ void main() {
       completed: true,
       count: 5,
       quality: 3,
+      type: HabitType.counted,
+      frequency: Frequency.weekly,
+      daysOfWeek: [1, 3, 5],
+      timesPerDay: 5,
     );
 
     final map = log.toMap();
@@ -19,5 +23,9 @@ void main() {
     expect(newLog.completed, true);
     expect(newLog.count, 5);
     expect(newLog.quality, 3);
+    expect(newLog.type, HabitType.counted);
+    expect(newLog.frequency, Frequency.weekly);
+    expect(newLog.daysOfWeek, [1, 3, 5]);
+    expect(newLog.timesPerDay, 5);
   });
 }

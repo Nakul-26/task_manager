@@ -17,16 +17,20 @@ bool isSameDate(DateTime a, DateTime b) {
       normalizedA.day == normalizedB.day;
 }
 
-bool isScheduledDay(Habit habit, DateTime date) {
+bool isScheduledDayForRule(HabitRuleSnapshot rule, DateTime date) {
   final normalized = normalizeDate(date);
-  switch (habit.frequency) {
+  switch (rule.frequency) {
     case Frequency.daily:
       return true;
     case Frequency.weekly:
-      return habit.daysOfWeek?.contains(normalized.weekday) ?? false;
+      return rule.daysOfWeek?.contains(normalized.weekday) ?? false;
     case Frequency.oddDays:
       return normalized.day.isOdd;
     case Frequency.evenDays:
       return normalized.day.isEven;
   }
+}
+
+bool isScheduledDay(Habit habit, DateTime date) {
+  return isScheduledDayForRule(habit.ruleForDate(date), date);
 }

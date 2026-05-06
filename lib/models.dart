@@ -6,6 +6,21 @@ enum Frequency { daily, weekly, oddDays, evenDays }
 
 enum PriorityLevel { core, secondary, optional }
 
+bool _sameIntList(List<int>? a, List<int>? b) {
+  if (a == null || b == null) {
+    return a == b;
+  }
+  if (a.length != b.length) {
+    return false;
+  }
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 extension PriorityLevelInfo on PriorityLevel {
   String get displayName {
     switch (this) {
@@ -97,6 +112,7 @@ class Habit {
   late DateTime createdAt;
   late DateTime? archivedAt;
   late int sortOrder;
+  late List<HabitRuleSnapshot> ruleHistory;
 
   Habit({
     required this.id,
@@ -123,7 +139,19 @@ class Habit {
     required this.createdAt,
     this.archivedAt,
     this.sortOrder = -1,
-  }) : startDate = startDate ?? createdAt;
+    List<HabitRuleSnapshot>? ruleHistory,
+  }) : startDate = startDate ?? createdAt {
+    this.ruleHistory =
+        (ruleHistory == null || ruleHistory.isEmpty)
+            ? [
+                HabitRuleSnapshot.fromHabit(
+                  this,
+                  effectiveFrom: this.startDate,
+                ),
+              ]
+            : List<HabitRuleSnapshot>.from(ruleHistory)
+            ..sort((a, b) => a.effectiveFrom.compareTo(b.effectiveFrom));
+  }
 
   Map<String, dynamic> toMap() {
     return {
@@ -151,6 +179,7 @@ class Habit {
       'createdAt': createdAt.toIso8601String(),
       'archivedAt': archivedAt?.toIso8601String(),
       'sortOrder': sortOrder,
+      'ruleHistory': ruleHistory.map((rule) => rule.toMap()).toList(),
     };
   }
 
@@ -159,6 +188,12 @@ class Habit {
     final parsedImportanceScore = _parseImportanceScore(map['importanceScore']);
     final importanceScore =
         parsedImportanceScore ?? ((map['isImportant'] ?? false) ? 1 : 0);
+    final parsedRuleHistory = map['ruleHistory'];
+    final ruleHistory = parsedRuleHistory is List
+        ? parsedRuleHistory
+            .map((entry) => HabitRuleSnapshot.fromMap(Map<String, dynamic>.from(entry as Map)))
+            .toList()
+        : <HabitRuleSnapshot>[];
     return Habit(
       id: map['id'],
       name: map['name'],
@@ -190,7 +225,50 @@ class Habit {
           ? DateTime.parse(map['archivedAt'])
           : null,
       sortOrder: map['sortOrder'] ?? -1,
+      ruleHistory: ruleHistory.isEmpty
+          ? [
+              HabitRuleSnapshot(
+                effectiveFrom: map['startDate'] != null
+                    ? DateTime.parse(map['startDate'])
+                    : createdAt,
+                type: HabitType.values[map['type'] ?? 0],
+                frequency: Frequency.values[map['frequency'] ?? 0],
+                daysOfWeek: map['daysOfWeek'] != null
+                    ? List<int>.from(map['daysOfWeek'])
+                    : null,
+                timesPerDay: map['timesPerDay'],
+              ),
+            ]
+          : ruleHistory,
     );
+  }
+
+  HabitRuleSnapshot get currentRule => ruleHistory.last;
+
+  HabitRuleSnapshot ruleForDate(DateTime date) {
+    final normalizedDate = DateTime(date.year, date.month, date.day);
+    HabitRuleSnapshot selected = ruleHistory.first;
+    for (final rule in ruleHistory) {
+      if (!rule.effectiveFrom.isAfter(normalizedDate)) {
+        selected = rule;
+      } else {
+        break;
+      }
+    }
+    return selected;
+  }
+
+  bool hasSameRule({
+    required HabitType type,
+    required Frequency frequency,
+    required List<int>? daysOfWeek,
+    required int? timesPerDay,
+  }) {
+    final current = currentRule;
+    return current.type == type &&
+        current.frequency == frequency &&
+        _sameIntList(current.daysOfWeek, daysOfWeek) &&
+        current.timesPerDay == timesPerDay;
   }
 
   static int? _parseImportanceScore(dynamic value) {
@@ -222,12 +300,75 @@ class Habit {
   }
 }
 
+class HabitRuleSnapshot {
+  late DateTime effectiveFrom;
+  late HabitType type;
+  late Frequency frequency;
+  late List<int>? daysOfWeek;
+  late int? timesPerDay;
+
+  HabitRuleSnapshot({
+    required DateTime effectiveFrom,
+    required this.type,
+    required this.frequency,
+    this.daysOfWeek,
+    this.timesPerDay,
+  }) : effectiveFrom = DateTime(
+         effectiveFrom.year,
+         effectiveFrom.month,
+         effectiveFrom.day,
+       );
+
+  factory HabitRuleSnapshot.fromHabit(
+    Habit habit, {
+    DateTime? effectiveFrom,
+  }) {
+    return HabitRuleSnapshot(
+      effectiveFrom: effectiveFrom ?? habit.startDate,
+      type: habit.type,
+      frequency: habit.frequency,
+      daysOfWeek: habit.daysOfWeek == null
+          ? null
+          : List<int>.from(habit.daysOfWeek!),
+      timesPerDay: habit.timesPerDay,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'effectiveFrom': effectiveFrom.toIso8601String(),
+      'type': type.index,
+      'frequency': frequency.index,
+      'daysOfWeek': daysOfWeek,
+      'timesPerDay': timesPerDay,
+    };
+  }
+
+  factory HabitRuleSnapshot.fromMap(Map<String, dynamic> map) {
+    return HabitRuleSnapshot(
+      effectiveFrom: map['effectiveFrom'] != null
+          ? DateTime.parse(map['effectiveFrom'])
+          : DateTime.now(),
+      type: HabitType.values[map['type'] ?? 0],
+      frequency: Frequency.values[map['frequency'] ?? 0],
+      daysOfWeek: map['daysOfWeek'] != null
+          ? List<int>.from(map['daysOfWeek'])
+          : null,
+      timesPerDay: map['timesPerDay'],
+    );
+  }
+}
+
 class DailyLog {
   late String date; // YYYY-MM-DD
   late String habitId;
   late bool completed;
   late int? count; // for counted habits
   late int? quality; // 1 to 4
+  late HabitType? type;
+  late Frequency? frequency;
+  late List<int>? daysOfWeek;
+  late int? timesPerDay;
 
   DailyLog({
     required this.date,
@@ -235,6 +376,10 @@ class DailyLog {
     this.completed = false,
     this.count,
     this.quality,
+    this.type,
+    this.frequency,
+    this.daysOfWeek,
+    this.timesPerDay,
   });
 
   Map<String, dynamic> toMap() {
@@ -244,6 +389,10 @@ class DailyLog {
       'completed': completed,
       'count': count,
       'quality': quality,
+      'type': type?.index,
+      'frequency': frequency?.index,
+      'daysOfWeek': daysOfWeek,
+      'timesPerDay': timesPerDay,
     };
   }
 
@@ -254,6 +403,13 @@ class DailyLog {
       completed: map['completed'] ?? false,
       count: map['count'],
       quality: map['quality'],
+      type: map['type'] != null ? HabitType.values[map['type']] : null,
+      frequency:
+          map['frequency'] != null ? Frequency.values[map['frequency']] : null,
+      daysOfWeek: map['daysOfWeek'] != null
+          ? List<int>.from(map['daysOfWeek'])
+          : null,
+      timesPerDay: map['timesPerDay'],
     );
   }
 }

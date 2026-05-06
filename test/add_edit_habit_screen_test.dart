@@ -17,10 +17,21 @@ void main() {
     tempDir = await Directory.systemTemp.createTemp('hive_add_edit_');
     Hive.init(tempDir.path);
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      const MethodChannel('dexterous.com/flutter/local_notifications'),
+      const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall methodCall) async {
+        if (methodCall.method == 'getApplicationDocumentsDirectory') {
+          return tempDir.path;
+        }
         return null;
       },
+    );
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('flutter_timezone'),
+      (MethodCall methodCall) async => 'UTC',
+    );
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('dexterous.com/flutter/local_notifications'),
+      (MethodCall methodCall) async => null,
     );
   });
 
@@ -32,7 +43,9 @@ void main() {
   });
 
   tearDown(() async {
-    await Hive.box(habitsBoxName).close();
+    if (Hive.isBoxOpen(habitsBoxName)) {
+      await Hive.box(habitsBoxName).close();
+    }
     await Hive.deleteBoxFromDisk(habitsBoxName);
   });
 
@@ -40,8 +53,20 @@ void main() {
     HiveBoxNames.habits = 'habits';
     await Hive.close();
     if (tempDir.existsSync()) {
-      await tempDir.delete(recursive: true);
+      try {
+        await tempDir.delete(recursive: true);
+      } catch (_) {
+        // Ignore deletion errors in tests if files are still locked
+      }
     }
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      null,
+    );
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('flutter_timezone'),
+      null,
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('dexterous.com/flutter/local_notifications'),
       null,
@@ -71,8 +96,10 @@ void main() {
 
       final saveButton = find.widgetWithText(ElevatedButton, 'Save');
       await tester.tap(saveButton);
+      // Wait for the save operation and navigation pop
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpAndSettle(); // Try settle again, but after explicit pumps
 
       final storedHabit = Habit.fromMap(
         Map<String, dynamic>.from(Hive.box(HiveBoxNames.habits).values.single),
@@ -80,8 +107,6 @@ void main() {
       expect(storedHabit.name, 'Deep Work');
       expect(storedHabit.description, 'Focus block');
     },
-    // Temporarily skipped while isolating the widget-test save hang.
-    skip: true,
     timeout: const Timeout(Duration(seconds: 15)),
   );
 }

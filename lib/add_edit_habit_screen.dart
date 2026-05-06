@@ -118,6 +118,55 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
 
+  bool _hasRuleChanged() {
+    final habit = widget.habit;
+    if (habit == null) {
+      return true;
+    }
+    return !habit.hasSameRule(
+      type: _type,
+      frequency: _frequency,
+      daysOfWeek: _daysOfWeek,
+      timesPerDay: _timesPerDay,
+    );
+  }
+
+  List<HabitRuleSnapshot> _buildRuleHistory(Habit? habit) {
+    final now = DateTime.now();
+    final normalizedNow = DateTime(now.year, now.month, now.day);
+    if (habit == null) {
+      return [
+        HabitRuleSnapshot(
+          effectiveFrom: _startDate,
+          type: _type,
+          frequency: _frequency,
+          daysOfWeek: _frequency == Frequency.weekly
+              ? List<int>.from(_daysOfWeek)
+              : null,
+          timesPerDay: _type == HabitType.counted ? _timesPerDay : null,
+        ),
+      ];
+    }
+
+    final history = List<HabitRuleSnapshot>.from(habit.ruleHistory);
+    if (!_hasRuleChanged()) {
+      return history;
+    }
+
+    history.add(
+      HabitRuleSnapshot(
+        effectiveFrom: normalizedNow,
+        type: _type,
+        frequency: _frequency,
+        daysOfWeek: _frequency == Frequency.weekly
+            ? List<int>.from(_daysOfWeek)
+            : null,
+        timesPerDay: _type == HabitType.counted ? _timesPerDay : null,
+      ),
+    );
+    return history;
+  }
+
   Future<void> _saveHabit() async {
     FocusScope.of(context).unfocus();
     _name = _nameController.text.trim();
@@ -197,6 +246,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
         createdAt: widget.habit?.createdAt ?? DateTime.now(),
         archivedAt: widget.habit?.archivedAt,
         sortOrder: sortOrder,
+        ruleHistory: _buildRuleHistory(widget.habit),
       );
       await habitBox.put(newHabit.id, newHabit.toMap());
       final onHabitSaved = widget.onHabitSaved;

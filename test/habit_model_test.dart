@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:habit_tracker/models.dart';
+import 'package:habit_tracker/utils/habit_schedule_utils.dart'
+    as schedule_utils;
 import 'package:habit_tracker/utils/habit_visibility_utils.dart';
 
 void main() {
@@ -34,6 +36,7 @@ void main() {
     expect(newHabit.visibleAfterMinute, 30);
     expect(newHabit.createdAt, DateTime(2026, 1, 1));
     expect(newHabit.archivedAt, DateTime(2026, 2, 1));
+    expect(newHabit.ruleHistory, isNotEmpty);
   });
 
   test(
@@ -92,5 +95,32 @@ void main() {
     expect(newPeriod.startDate, DateTime(2026, 3, 24));
     expect(newPeriod.endDate, DateTime(2026, 3, 29));
     expect(newPeriod.description, 'Exam prep');
+  });
+
+  test('Habit schedule uses the rule active on a date', () {
+    final habit = Habit(
+      id: 'history-1',
+      name: 'Study',
+      description: 'Study block',
+      createdAt: DateTime(2026, 1, 1),
+      startDate: DateTime(2026, 1, 1),
+      ruleHistory: [
+        HabitRuleSnapshot(
+          effectiveFrom: DateTime(2026, 1, 1),
+          type: HabitType.binary,
+          frequency: Frequency.daily,
+        ),
+        HabitRuleSnapshot(
+          effectiveFrom: DateTime(2026, 1, 10),
+          type: HabitType.binary,
+          frequency: Frequency.weekly,
+          daysOfWeek: [1, 3],
+        ),
+      ],
+    );
+
+    expect(schedule_utils.isScheduledDay(habit, DateTime(2026, 1, 8)), true);
+    expect(schedule_utils.isScheduledDay(habit, DateTime(2026, 1, 12)), true);
+    expect(schedule_utils.isScheduledDay(habit, DateTime(2026, 1, 13)), false);
   });
 }
