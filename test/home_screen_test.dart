@@ -79,7 +79,7 @@ void main() {
   testWidgets('Home screen shows app bar title', (WidgetTester tester) async {
     await pumpHome(tester);
 
-    expect(find.text('Today\'s Habits'), findsOneWidget);
+    expect(find.text('Today'), findsOneWidget);
   });
 
   testWidgets('Habits list shows a habit', (WidgetTester tester) async {

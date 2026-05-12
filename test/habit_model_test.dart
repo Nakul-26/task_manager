@@ -15,6 +15,7 @@ void main() {
       importanceScore: 4,
       isArchived: true,
       description: 'Read a book for 30 minutes',
+      executionContext: ExecutionContext.deepWork,
       useTimeVisibility: true,
       visibleAfterHour: 18,
       visibleAfterMinute: 30,
@@ -31,6 +32,7 @@ void main() {
     expect(newHabit.importanceScore, 4);
     expect(newHabit.isArchived, true);
     expect(newHabit.description, 'Read a book for 30 minutes');
+    expect(newHabit.executionContext, ExecutionContext.deepWork);
     expect(newHabit.useTimeVisibility, true);
     expect(newHabit.visibleAfterHour, 18);
     expect(newHabit.visibleAfterMinute, 30);
@@ -50,6 +52,7 @@ void main() {
         'description': '',
         'type': HabitType.binary.index,
         'frequency': Frequency.daily.index,
+        'executionContext': ExecutionContext.quickTask.index,
         'color': 0xFF2196F3,
         'createdAt': DateTime(2026, 1, 1).toIso8601String(),
       };
@@ -58,6 +61,7 @@ void main() {
 
       expect(habit.isImportant, true);
       expect(habit.importanceScore, 1);
+      expect(habit.executionContext, ExecutionContext.quickTask);
       expect(habit.useTimeVisibility, false);
       expect(habit.visibleAfterHour, isNull);
       expect(habit.visibleAfterMinute, isNull);
@@ -122,5 +126,19 @@ void main() {
     expect(schedule_utils.isScheduledDay(habit, DateTime(2026, 1, 8)), true);
     expect(schedule_utils.isScheduledDay(habit, DateTime(2026, 1, 12)), true);
     expect(schedule_utils.isScheduledDay(habit, DateTime(2026, 1, 13)), false);
+  });
+
+  test('Habit export includes non-default execution context', () {
+    final habit = Habit(
+      id: 'export-1',
+      name: 'Study',
+      description: 'Deep work block',
+      executionContext: ExecutionContext.deepWork,
+      createdAt: DateTime(2026, 1, 1),
+    );
+
+    final exported = habit.toExportMap();
+
+    expect(exported['executionContext'], ExecutionContext.deepWork.index);
   });
 }

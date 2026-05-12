@@ -14,13 +14,17 @@ Offline-first Flutter app for tracking habits with reminders, progress, and hist
 
 ### Today Screen
 - Shows active habits for the current date (filters by start date and frequency).
+- Organizes the screen around adaptive execution environments:
+  - strategic anchors
+  - best-for-current-context tasks
+  - deferred tasks
 - Supports two habit types:
   - `binary`: complete/incomplete checkbox
   - `counted`: increment/decrement progress toward `timesPerDay`
 - Displays per-habit:
   - name and description
   - color indicator
-  - importance marker/score ordering
+  - strategic priority and execution context
   - current streak
   - success rate
 - Optional per-habit timer with start/pause/reset dialog.
@@ -39,6 +43,8 @@ Offline-first Flutter app for tracking habits with reminders, progress, and hist
   - name
   - description
   - importance score (0-5)
+  - priority level as a strategic importance band
+  - execution environment for realistic placement
   - type (`binary` or `counted`)
   - `timesPerDay` for counted habits
   - frequency (`daily`, `weekly`, `oddDays`, `evenDays`)
@@ -52,6 +58,11 @@ Offline-first Flutter app for tracking habits with reminders, progress, and hist
 - Reorder active habits (drag-and-drop).
 - Edit, archive, and delete habits.
 - Archived habits are hidden from Today screen.
+
+### Manage Environments
+- Add, edit, reorder, and delete custom execution environments.
+- Built-in environments stay as safe defaults and can be reset at any time.
+- Today screen and habit editor both read from the same environment registry.
 
 ### Archived Habits Screen
 - View archived habits.
@@ -80,6 +91,9 @@ Offline-first Flutter app for tracking habits with reminders, progress, and hist
 - `description` (String)
 - `isImportant` (bool)
 - `importanceScore` (int)
+- `priorityLevel` (`core`, `secondary`, `optional`)
+- `executionContext` (`deepWork`, `college`, `quickTask`)
+- `environmentId` (String)
 - `type` (`binary` or `counted`)
 - `frequency` (`daily`, `weekly`, `oddDays`, `evenDays`)
 - `daysOfWeek` (List<int>?)

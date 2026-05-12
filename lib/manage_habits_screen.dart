@@ -1,9 +1,14 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:habit_tracker/add_edit_habit_screen.dart';
 import 'package:habit_tracker/archived_habits_screen.dart';
 import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/reminder_service.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 class ManageHabitsScreen extends StatefulWidget {
@@ -134,12 +139,200 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
         .then((_) => _loadHabits());
   }
 
+  Map<String, dynamic> _buildHabitsExportPayload() {
+    final habits = _habitBox.values
+        .map((e) => Habit.fromMap(Map<String, dynamic>.from(e)))
+        .toList()
+      ..sort((a, b) {
+        final archivedCompare = a.isArchived == b.isArchived
+            ? 0
+            : (a.isArchived ? 1 : -1);
+        if (archivedCompare != 0) {
+          return archivedCompare;
+        }
+        final importanceCompare = b.importanceScore.compareTo(a.importanceScore);
+        if (importanceCompare != 0) {
+          return importanceCompare;
+        }
+        return a.sortOrder.compareTo(b.sortOrder);
+      });
+
+    return {
+      'appVersion': 1,
+      'exportedAt': DateTime.now().toIso8601String(),
+      'habitCount': habits.length,
+      'habits': habits.map((habit) => habit.toExportMap()).toList(),
+    };
+  }
+
+  String _buildHabitsExportJson() {
+    return jsonEncode(_buildHabitsExportPayload());
+  }
+
+  String _buildExportFileName() {
+    final now = DateTime.now();
+    final timestamp =
+        '${now.year.toString().padLeft(4, '0')}_'
+        '${now.month.toString().padLeft(2, '0')}_'
+        '${now.day.toString().padLeft(2, '0')}_'
+        '${now.hour.toString().padLeft(2, '0')}'
+        '${now.minute.toString().padLeft(2, '0')}'
+        '${now.second.toString().padLeft(2, '0')}';
+    return 'habits_backup_$timestamp.json';
+  }
+
+  Future<Directory> _resolveExportDirectory() async {
+    final downloadsDirectory = await getDownloadsDirectory();
+    if (downloadsDirectory != null) {
+      return downloadsDirectory;
+    }
+    return getApplicationDocumentsDirectory();
+  }
+
+  Future<File> _writeHabitsExportFile() async {
+    final directory = await _resolveExportDirectory();
+    await directory.create(recursive: true);
+    final exportFile = File('${directory.path}${Platform.pathSeparator}${_buildExportFileName()}');
+    await exportFile.writeAsString(_buildHabitsExportJson());
+    return exportFile;
+  }
+
+  Future<File> _createSharedExportFile() async {
+    final tempDirectory = await Directory.systemTemp.createTemp('habit_backup_');
+    final exportFile = File(
+      '${tempDirectory.path}${Platform.pathSeparator}${_buildExportFileName()}',
+    );
+    await exportFile.writeAsString(_buildHabitsExportJson());
+    return exportFile;
+  }
+
+  Future<void> _exportHabitsToFile() async {
+    final exportFile = await _writeHabitsExportFile();
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Backup exported to ${exportFile.path}.'),
+      ),
+    );
+  }
+
+  Future<void> _shareHabitsExport() async {
+    final exportFile = await _createSharedExportFile();
+    await SharePlus.instance.share(
+      ShareParams(
+        files: [XFile(exportFile.path)],
+        title: 'Habits backup',
+        subject: 'Habits backup',
+      ),
+    );
+  }
+
+  Future<void> _showExportActions() async {
+    final action = await showModalBottomSheet<_HabitsExportAction>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.save_alt),
+                title: const Text('Export File'),
+                subtitle: const Text('Save a JSON backup to your Downloads folder'),
+                onTap: () => Navigator.of(sheetContext).pop(
+                  _HabitsExportAction.exportFile,
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.ios_share),
+                title: const Text('Share Backup'),
+                subtitle: const Text('Open the share sheet with the backup file'),
+                onTap: () => Navigator.of(sheetContext).pop(
+                  _HabitsExportAction.shareFile,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    switch (action) {
+      case _HabitsExportAction.exportFile:
+        await _exportHabitsToFile();
+        break;
+      case _HabitsExportAction.shareFile:
+        await _shareHabitsExport();
+        break;
+      case null:
+        break;
+    }
+  }
+
+  void _openEditHabit(Habit habit) {
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (context) => AddEditHabitScreen(habit: habit),
+          ),
+        )
+        .then((_) => _loadHabits());
+  }
+
+  void _showHabitActions(BuildContext context, Habit habit) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.edit),
+                title: const Text('Edit'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _openEditHabit(habit);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.archive_outlined),
+                title: const Text('Archive'),
+                onTap: () async {
+                  Navigator.of(context).pop();
+                  await _setArchiveStatus(habit, true);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline),
+                title: const Text('Delete'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _deleteHabit(habit);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Manage Habits'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.ios_share),
+            tooltip: 'Export Backup',
+            onPressed: _showExportActions,
+          ),
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: 'Add Habit',
@@ -171,46 +364,31 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
                 final habit = _activeHabits[index];
                 return ListTile(
                   key: ValueKey(habit.id),
+                  isThreeLine: habit.description.trim().isNotEmpty,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 6,
+                  ),
                   leading: ReorderableDragStartListener(
                     index: index,
                     child: const Icon(Icons.drag_handle),
                   ),
                   title: Text(
                     habit.name,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  subtitle: Text(
-                    habit.description,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.archive_outlined),
-                        tooltip: 'Archive',
-                        onPressed: () => _setArchiveStatus(habit, true),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.edit),
-                        onPressed: () {
-                          Navigator.of(context)
-                              .push(
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      AddEditHabitScreen(habit: habit),
-                                ),
-                              )
-                              .then((_) => _loadHabits());
-                        },
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete),
-                        onPressed: () => _deleteHabit(habit),
-                      ),
-                    ],
+                  subtitle: habit.description.trim().isEmpty
+                      ? null
+                      : Text(
+                          habit.description,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.more_vert),
+                    tooltip: 'Habit actions',
+                    onPressed: () => _showHabitActions(context, habit),
                   ),
                 );
               },
@@ -218,3 +396,5 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
     );
   }
 }
+
+enum _HabitsExportAction { exportFile, shareFile }

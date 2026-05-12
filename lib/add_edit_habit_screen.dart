@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:habit_tracker/box_names.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:habit_tracker/models.dart';
+import 'package:habit_tracker/manage_environments_screen.dart';
 import 'package:habit_tracker/reminder_service.dart';
+import 'package:habit_tracker/utils/execution_environment_utils.dart';
 import 'package:uuid/uuid.dart';
 import 'package:hive/hive.dart';
 
@@ -28,8 +30,11 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
   late final TextEditingController _descriptionController;
   late String _name;
   late String _description;
+  late Box<dynamic> _settingsBox;
   HabitType _type = HabitType.binary;
   Frequency _frequency = Frequency.daily;
+  String _environmentId = 'quickTask';
+  List<ExecutionEnvironment> _environments = const [];
   int? _timesPerDay;
   int? _timerMinutes;
   List<int> _daysOfWeek = [];
@@ -60,11 +65,18 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
   @override
   void initState() {
     super.initState();
+    _settingsBox = Hive.box(HiveBoxNames.appSettings);
+    _environments = loadExecutionEnvironments(_settingsBox);
     if (widget.habit != null) {
       _name = widget.habit!.name;
       _description = widget.habit!.description;
       _type = widget.habit!.type;
       _frequency = widget.habit!.frequency;
+      _environmentId = widget.habit!.environmentId;
+      if (findExecutionEnvironment(_environments, _environmentId) == null &&
+          _environments.isNotEmpty) {
+        _environmentId = _environments.first.id;
+      }
       _timesPerDay = widget.habit!.timesPerDay;
       _timerMinutes = widget.habit!.timerMinutes;
       _daysOfWeek = widget.habit!.daysOfWeek ?? [];
@@ -98,6 +110,9 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
       _importanceScore = 0;
       _startDate = _normalizeDate(DateTime.now());
       _endDate = null;
+      if (_environments.isNotEmpty) {
+        _environmentId = _environments.first.id;
+      }
     }
     _nameController = TextEditingController(text: _name);
     _descriptionController = TextEditingController(text: _description);
@@ -228,6 +243,8 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
         isArchived: widget.habit?.isArchived ?? false,
         type: _type,
         frequency: _frequency,
+        executionContext: _legacyExecutionContextForEnvironment(_environmentId),
+        environmentId: _environmentId,
         timesPerDay: _timesPerDay,
         timerMinutes: _timerMinutes,
         daysOfWeek: _daysOfWeek,
@@ -260,6 +277,34 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
       }
       Navigator.of(context).pop();
     }
+  }
+
+  ExecutionContext _legacyExecutionContextForEnvironment(String environmentId) {
+    switch (environmentId) {
+      case 'deepWork':
+        return ExecutionContext.deepWork;
+      case 'college':
+        return ExecutionContext.college;
+      case 'quickTask':
+      default:
+        return ExecutionContext.quickTask;
+    }
+  }
+
+  Future<void> _openEnvironmentManager() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => const ManageEnvironmentsScreen()),
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _environments = loadExecutionEnvironments(_settingsBox);
+      if (findExecutionEnvironment(_environments, _environmentId) == null &&
+          _environments.isNotEmpty) {
+        _environmentId = _environments.first.id;
+      }
+    });
   }
 
   Future<void> _deleteHabit() async {
@@ -407,7 +452,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                   decoration: const InputDecoration(
                     labelText: 'Priority Level',
                     helperText:
-                        'Higher level tasks must be completed before lower ones appear.',
+                        'Strategic importance. This stays visible even if the context changes.',
                   ),
                   items: PriorityLevel.values.map((level) {
                     return DropdownMenuItem(
@@ -425,6 +470,39 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                       _priorityLevel = value;
                     });
                   },
+                ),
+                DropdownButtonFormField<String>(
+                  initialValue: _environmentId,
+                  decoration: const InputDecoration(
+                    labelText: 'Execution Environment',
+                    helperText:
+                        'Where this habit is realistically executable.',
+                  ),
+                  items: _environments.map((environment) {
+                    return DropdownMenuItem(
+                      value: environment.id,
+                      child: Row(
+                        children: [
+                          Icon(environment.icon, size: 18, color: environment.color),
+                          const SizedBox(width: 8),
+                          Text(environment.name),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    if (value == null) {
+                      return;
+                    }
+                    setState(() {
+                      _environmentId = value;
+                    });
+                  },
+                ),
+                TextButton.icon(
+                  onPressed: _openEnvironmentManager,
+                  icon: const Icon(Icons.tune),
+                  label: const Text('Manage environments'),
                 ),
                 SwitchListTile(
                   title: const Text('Important'),

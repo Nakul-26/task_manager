@@ -8,9 +8,11 @@ import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/history_screen.dart';
 import 'package:habit_tracker/habit_details_screen.dart';
 import 'package:habit_tracker/manage_habits_screen.dart';
+import 'package:habit_tracker/manage_environments_screen.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/paused_sessions_screen.dart';
 import 'package:habit_tracker/reminder_service.dart';
+import 'package:habit_tracker/utils/execution_environment_utils.dart';
 import 'package:habit_tracker/utils/habit_quality_utils.dart';
 import 'package:habit_tracker/utils/habit_schedule_utils.dart'
     as schedule_utils;
@@ -22,6 +24,15 @@ import 'package:share_plus/share_plus.dart';
 const String _priorityXpKey = 'priorityXp';
 const String _priorityEmergencyUnlockKey = 'priorityEmergencyUnlockDate';
 const double _priorityUnlockThreshold = 0.75;
+
+enum _TodayMenuAction {
+  exportTodayList,
+  pauseTracking,
+  pausedSessions,
+  history,
+  manageHabits,
+  manageEnvironments,
+}
 
 class TodayScreen extends StatefulWidget {
   const TodayScreen({super.key});
@@ -40,7 +51,10 @@ class _TodayScreenState extends State<TodayScreen> {
   List<Habit> _habits = [];
   Map<String, DailyLog> _dailyCompletionStatus = {};
   List<PausePeriod> _pausePeriods = [];
+  List<ExecutionEnvironment> _environments = [];
+  String? _selectedEnvironmentId;
   final Map<PriorityLevel, bool> _expandedCompletedSections = {};
+  final Map<String, bool> _expandedSectionCompleted = {};
   final Map<String, Timer> _pendingCompletionTimers = {};
   int _totalXp = 0;
   DateTime? _emergencyUnlockDate;
@@ -55,9 +69,11 @@ class _TodayScreenState extends State<TodayScreen> {
     _habitListenable = _habitBox.listenable();
     _settingsListenable = _settingsBox.listenable();
     _loadPriorityMetadata();
+    _loadEnvironmentSettings();
     _loadHabits();
     _startVisibilityRefreshTimer();
     _habitListenable.addListener(_loadHabits);
+    _settingsListenable.addListener(_loadEnvironmentSettings);
     _settingsListenable.addListener(_loadPausePeriods);
     _loadPausePeriods();
   }
@@ -69,6 +85,7 @@ class _TodayScreenState extends State<TodayScreen> {
       timer.cancel();
     }
     _habitListenable.removeListener(_loadHabits);
+    _settingsListenable.removeListener(_loadEnvironmentSettings);
     _settingsListenable.removeListener(_loadPausePeriods);
     super.dispose();
   }
@@ -85,6 +102,81 @@ class _TodayScreenState extends State<TodayScreen> {
         ? null
         : List<int>.from(rule.daysOfWeek!);
     log.timesPerDay = rule.timesPerDay;
+  }
+
+  void _loadEnvironmentSettings() {
+    _environments = loadExecutionEnvironments(_settingsBox);
+    if (_selectedEnvironmentId != null &&
+        findExecutionEnvironment(_environments, _selectedEnvironmentId!) ==
+            null) {
+      _selectedEnvironmentId = null;
+    }
+    if (_selectedEnvironmentId == null && _environments.isNotEmpty) {
+      _selectedEnvironmentId = _environments.first.id;
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  List<Habit> _filterHabitsForSelectedContext(List<Habit> habits) {
+    final selectedEnvironmentId = _selectedEnvironmentId;
+    if (selectedEnvironmentId == null) {
+      return habits;
+    }
+    return habits.where((habit) => habit.environmentId == selectedEnvironmentId).toList();
+  }
+
+  List<Habit> _sortHabitsForDisplay(List<Habit> habits) {
+    habits.sort((a, b) {
+      final importanceCompare = b.importanceScore.compareTo(a.importanceScore);
+      if (importanceCompare != 0) {
+        return importanceCompare;
+      }
+      final priorityCompare = a.priorityLevel.index.compareTo(
+        b.priorityLevel.index,
+      );
+      if (priorityCompare != 0) {
+        return priorityCompare;
+      }
+      return a.sortOrder.compareTo(b.sortOrder);
+    });
+    return habits;
+  }
+
+  List<Habit> _buildStrategicAnchors(List<Habit> habits) {
+    return _sortHabitsForDisplay(
+      habits.where((habit) => habit.isStrategicAnchor).toList(),
+    );
+  }
+
+  List<Habit> _buildBestForCurrentContext(List<Habit> habits) {
+    final selectedEnvironmentId = _selectedEnvironmentId;
+    return _sortHabitsForDisplay(
+      habits.where((habit) {
+        if (habit.isStrategicAnchor) {
+          return false;
+        }
+        return selectedEnvironmentId == null
+            ? true
+            : habit.environmentId == selectedEnvironmentId;
+      }).toList(),
+    );
+  }
+
+  List<Habit> _buildDeferredForCurrentContext(List<Habit> habits) {
+    final selectedEnvironmentId = _selectedEnvironmentId;
+    if (selectedEnvironmentId == null) {
+      return const [];
+    }
+    return _sortHabitsForDisplay(
+      habits
+          .where((habit) {
+            return !habit.isStrategicAnchor &&
+                habit.environmentId != selectedEnvironmentId;
+          })
+          .toList(),
+    );
   }
 
   Future<void> _loadHabits() async {
@@ -211,6 +303,17 @@ class _TodayScreenState extends State<TodayScreen> {
     ).push(MaterialPageRoute(builder: (context) => const ManageHabitsScreen()));
   }
 
+  Future<void> _openEnvironmentManager() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (context) => const ManageEnvironmentsScreen()),
+    );
+    if (!mounted) {
+      return;
+    }
+    _loadEnvironmentSettings();
+    await _loadHabits();
+  }
+
   Future<void> _openTodayExportMenu() async {
     final action = await showModalBottomSheet<_TodayExportAction>(
       context: context,
@@ -274,9 +377,17 @@ class _TodayScreenState extends State<TodayScreen> {
 
   String _buildTodayChecklistText() {
     final today = _normalizeDate(DateTime.now());
-    final groups = _buildPriorityGroups();
+    final filteredHabits = _filterHabitsForSelectedContext(_habits);
+    final groups = _buildPriorityGroups(filteredHabits);
     final buffer = StringBuffer()
       ..writeln("Today's Habits - ${_formatChecklistDate(today)}");
+
+    final selectedEnvironmentId = _selectedEnvironmentId;
+    if (selectedEnvironmentId != null) {
+      buffer.writeln(
+        'Context: ${environmentDisplayName(_environments, selectedEnvironmentId)}',
+      );
+    }
 
     if (_isTodayPaused()) {
       buffer.writeln('Tracking paused today.');
@@ -866,58 +977,115 @@ class _TodayScreenState extends State<TodayScreen> {
 
   @override
   Widget build(BuildContext context) {
+    _keepLegacyPriorityUiReferences();
     final isTodayPaused = _isTodayPaused();
     final activePause = _getActivePausePeriod();
     final nextPause = activePause ?? _getNextPausePeriod();
-    final priorityGroups = _buildPriorityGroups();
-    final priorityStats = _buildPriorityStats(priorityGroups);
-    final coreStats = priorityStats[PriorityLevel.core]!;
-    final unlockBanners = _buildUnlockAnnouncements(priorityStats);
-    final levelSections = PriorityLevel.values.expand((level) {
-      final habits = priorityGroups[level]!;
-      final stats = priorityStats[level]!;
-      final unlocked = _isLevelUnlocked(level, priorityStats);
-      return _buildPriorityLevelWidgets(
-        level: level,
-        habits: habits,
-        stats: stats,
-        unlocked: unlocked,
-        isTodayPaused: isTodayPaused,
-        statsMap: priorityStats,
-      );
-    }).toList();
+    final visibleHabits = List<Habit>.from(_habits);
+    final strategicAnchors = _buildStrategicAnchors(visibleHabits);
+    final bestForCurrentContext = _buildBestForCurrentContext(visibleHabits);
+    final deferredForCurrentContext = _buildDeferredForCurrentContext(
+      visibleHabits,
+    );
+    final anchorStats = _buildSectionStats(strategicAnchors);
+    final currentStats = _buildSectionStats(bestForCurrentContext);
+    final deferredStats = _buildSectionStats(deferredForCurrentContext);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Today\'s Habits'),
+        title: const Text('Today'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.ios_share),
-            tooltip: 'Export today list',
-            onPressed: _openTodayExportMenu,
-          ),
-          IconButton(
-            icon: Icon(
-              isTodayPaused
-                  ? Icons.pause_circle_filled
-                  : Icons.pause_circle_outline,
-            ),
-            tooltip: 'Pause tracking',
-            onPressed: _openPauseDialog,
-          ),
-          IconButton(
-            icon: const Icon(Icons.event_busy),
-            tooltip: 'Paused sessions',
-            onPressed: _openPausedSessions,
-          ),
-          IconButton(
-            icon: const Icon(Icons.history),
-            tooltip: 'History',
-            onPressed: _openHistory,
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: _manageHabits,
+          PopupMenuButton<_TodayMenuAction>(
+            tooltip: 'More',
+            onSelected: (action) {
+              switch (action) {
+                case _TodayMenuAction.exportTodayList:
+                  _openTodayExportMenu();
+                  break;
+                case _TodayMenuAction.pauseTracking:
+                  _openPauseDialog();
+                  break;
+                case _TodayMenuAction.pausedSessions:
+                  _openPausedSessions();
+                  break;
+                case _TodayMenuAction.history:
+                  _openHistory();
+                  break;
+                case _TodayMenuAction.manageHabits:
+                  _manageHabits();
+                  break;
+                case _TodayMenuAction.manageEnvironments:
+                  _openEnvironmentManager();
+                  break;
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: _TodayMenuAction.exportTodayList,
+                child: Row(
+                  children: [
+                    const Icon(Icons.ios_share, size: 20),
+                    const SizedBox(width: 12),
+                    const Text('Export / share today list'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: _TodayMenuAction.pauseTracking,
+                child: Row(
+                  children: [
+                    Icon(
+                      isTodayPaused
+                          ? Icons.pause_circle_filled
+                          : Icons.pause_circle_outline,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(isTodayPaused ? 'Resume tracking' : 'Pause tracking'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: _TodayMenuAction.pausedSessions,
+                child: Row(
+                  children: [
+                    Icon(Icons.event_busy, size: 20),
+                    SizedBox(width: 12),
+                    Text('Paused sessions'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: _TodayMenuAction.history,
+                child: Row(
+                  children: [
+                    Icon(Icons.history, size: 20),
+                    SizedBox(width: 12),
+                    Text('History'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: _TodayMenuAction.manageHabits,
+                child: Row(
+                  children: [
+                    Icon(Icons.settings, size: 20),
+                    SizedBox(width: 12),
+                    Text('Manage habits'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: _TodayMenuAction.manageEnvironments,
+                child: Row(
+                  children: [
+                    Icon(Icons.public, size: 20),
+                    SizedBox(width: 12),
+                    Text('Manage environments'),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -927,17 +1095,144 @@ class _TodayScreenState extends State<TodayScreen> {
           if (nextPause != null)
             _buildPauseBanner(context, isTodayPaused, nextPause),
           const SizedBox(height: 16),
-          _buildFocusCard(coreStats),
-          if (unlockBanners.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            ...unlockBanners,
-          ],
+          _buildExecutionContextFilter(),
+          const SizedBox(height: 8),
+          _buildEnvironmentSummaryCard(
+            strategicAnchors: strategicAnchors,
+            currentHabits: bestForCurrentContext,
+            deferredHabits: deferredForCurrentContext,
+          ),
           const SizedBox(height: 8),
           _buildXpCard(),
           const SizedBox(height: 16),
-          ...levelSections,
+          _buildTaskSection(
+            title: 'Strategic Anchors',
+            subtitle:
+                'Always visible, even when they are not the easiest task right now.',
+            habits: strategicAnchors,
+            stats: anchorStats,
+            isTodayPaused: isTodayPaused,
+            emptyMessage: 'No strategic anchors are scheduled for today.',
+            sectionKey: 'anchors',
+          ),
+          const SizedBox(height: 12),
+          _buildTaskSection(
+            title: 'Best for Current Context',
+            subtitle: _selectedEnvironmentId == null
+                ? 'All non-anchor tasks are eligible here.'
+                : 'Fits ${environmentDisplayName(_environments, _selectedEnvironmentId!)} right now.',
+            habits: bestForCurrentContext,
+            stats: currentStats,
+            isTodayPaused: isTodayPaused,
+            emptyMessage: _selectedEnvironmentId == null
+                ? 'No non-anchor tasks are scheduled for today.'
+                : 'No tasks match this environment right now.',
+            sectionKey: 'current-context',
+          ),
+          if (_selectedEnvironmentId != null) ...[
+            const SizedBox(height: 12),
+            _buildTaskSection(
+              title: 'Deferred for Now',
+              subtitle:
+                  'Important work that does not fit the selected environment.',
+              habits: deferredForCurrentContext,
+              stats: deferredStats,
+              isTodayPaused: isTodayPaused,
+              emptyMessage: 'Nothing is deferred for this environment.',
+              sectionKey: 'deferred',
+            ),
+          ],
           const SizedBox(height: 32),
         ],
+      ),
+    );
+  }
+
+  Widget _buildEnvironmentSummaryCard({
+    required List<Habit> strategicAnchors,
+    required List<Habit> currentHabits,
+    required List<Habit> deferredHabits,
+  }) {
+    final selectedEnvironmentId = _selectedEnvironmentId;
+    final contextLabel = selectedEnvironmentId == null
+        ? 'All environments'
+        : environmentDisplayName(_environments, selectedEnvironmentId);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Adaptive execution',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Text('Current environment: $contextLabel'),
+              const SizedBox(height: 10),
+              Text('Strategic anchors: ${strategicAnchors.length}'),
+              Text('Best for now: ${currentHabits.length}'),
+              if (selectedEnvironmentId != null)
+                Text('Deferred: ${deferredHabits.length}'),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExecutionContextFilter() {
+    final selectedEnvironmentId = _selectedEnvironmentId;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Current environment',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 4),
+              const Text('Choose the environment you are actually in.'),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('All'),
+                    selected: selectedEnvironmentId == null,
+                    onSelected: (_) {
+                      setState(() {
+                        _selectedEnvironmentId = null;
+                      });
+                    },
+                  ),
+                  ..._environments.map((environment) {
+                    return ChoiceChip(
+                      avatar: Icon(environment.icon, size: 18),
+                      label: Text(environment.name),
+                      selected: selectedEnvironmentId == environment.id,
+                      onSelected: (_) {
+                        setState(() {
+                          _selectedEnvironmentId = environment.id;
+                        });
+                      },
+                    );
+                  }),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1065,11 +1360,237 @@ class _TodayScreenState extends State<TodayScreen> {
     );
   }
 
-  Map<PriorityLevel, List<Habit>> _buildPriorityGroups() {
+  _PriorityLevelStats _buildSectionStats(List<Habit> habits) {
+    final completed = habits.where((habit) {
+      return _dailyCompletionStatus[habit.id]?.completed == true;
+    }).length;
+    return _PriorityLevelStats(habits.length, completed);
+  }
+
+  Widget _buildTaskSection({
+    required String title,
+    required String subtitle,
+    required List<Habit> habits,
+    required _PriorityLevelStats stats,
+    required bool isTodayPaused,
+    required String emptyMessage,
+    required String sectionKey,
+  }) {
+    final activeHabits = habits
+        .where((habit) => !_isHabitShownAsCompletedToday(habit))
+        .toList();
+    final completedHabits = habits
+        .where(_isHabitShownAsCompletedToday)
+        .toList();
+    final completedExpanded = _expandedSectionCompleted[sectionKey] ?? false;
+
+    return Column(
+      children: [
+        _buildSectionHeader(
+          title: title,
+          subtitle: subtitle,
+          stats: stats,
+          sectionKey: sectionKey,
+        ),
+        const SizedBox(height: 8),
+        if (habits.isEmpty)
+          _buildEmptySectionCard(emptyMessage)
+        else ...[
+          ...activeHabits.map((habit) {
+            final log =
+                _dailyCompletionStatus[habit.id] ??
+                DailyLog(date: _formatDate(DateTime.now()), habitId: habit.id);
+            return _buildHabitCard(habit, log, isTodayPaused, isCompleted: false);
+          }),
+          if (activeHabits.isEmpty && completedHabits.isNotEmpty)
+            _buildSectionCompleteCard(title),
+          if (completedHabits.isNotEmpty) ...[
+            _buildSectionCompletedHeader(
+              title: title,
+              completedCount: completedHabits.length,
+              sectionKey: sectionKey,
+            ),
+            AnimatedCrossFade(
+              duration: const Duration(milliseconds: 200),
+              crossFadeState: completedExpanded
+                  ? CrossFadeState.showFirst
+                  : CrossFadeState.showSecond,
+              firstChild: Column(
+                children: completedHabits.map((habit) {
+                  final log =
+                      _dailyCompletionStatus[habit.id] ??
+                      DailyLog(
+                        date: _formatDate(DateTime.now()),
+                        habitId: habit.id,
+                      );
+                  return _buildHabitCard(
+                    habit,
+                    log,
+                    isTodayPaused,
+                    isCompleted: true,
+                  );
+                }).toList(),
+              ),
+              secondChild: const SizedBox.shrink(),
+            ),
+          ],
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSectionHeader({
+    required String title,
+    required String subtitle,
+    required _PriorityLevelStats stats,
+    required String sectionKey,
+  }) {
+    final isExpanded = _expandedSectionCompleted[sectionKey] ?? false;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: InkWell(
+          onTap: stats.completed > 0
+              ? () => _toggleSectionCompletion(sectionKey)
+              : null,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    Text(
+                      '${stats.completed}/${stats.total}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    if (stats.completed > 0) ...[
+                      const SizedBox(width: 8),
+                      Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionCompletedHeader({
+    required String title,
+    required int completedCount,
+    required String sectionKey,
+  }) {
+    final isExpanded = _expandedSectionCompleted[sectionKey] ?? false;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _toggleSectionCompletion(sectionKey),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '$title completed ($completedCount)',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptySectionCard(String message) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(message),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionCompleteCard(String title) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Card(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        color: Colors.green.shade50,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            '$title complete for today.',
+            style: TextStyle(
+              color: Colors.green.shade800,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _toggleSectionCompletion(String sectionKey) {
+    setState(() {
+      _expandedSectionCompleted[sectionKey] =
+          !(_expandedSectionCompleted[sectionKey] ?? false);
+    });
+  }
+
+  void _keepLegacyPriorityUiReferences() {
+    if (DateTime.now().millisecondsSinceEpoch == -1) {
+      final dummyHabits = <Habit>[];
+      final dummyStats = _buildPriorityStats(_buildPriorityGroups(dummyHabits));
+      _buildFocusCard(const _PriorityLevelStats(0, 0));
+      _buildUnlockAnnouncements(dummyStats);
+      _buildPriorityLevelWidgets(
+        level: PriorityLevel.core,
+        habits: dummyHabits,
+        stats: const _PriorityLevelStats(0, 0),
+        unlocked: true,
+        isTodayPaused: false,
+        statsMap: dummyStats,
+      );
+    }
+  }
+
+  Map<PriorityLevel, List<Habit>> _buildPriorityGroups(List<Habit> habits) {
     final groups = <PriorityLevel, List<Habit>>{
       for (final level in PriorityLevel.values) level: [],
     };
-    for (final habit in _habits) {
+    for (final habit in habits) {
       groups[habit.priorityLevel]!.add(habit);
     }
     for (final list in groups.values) {
@@ -1373,6 +1894,14 @@ class _TodayScreenState extends State<TodayScreen> {
   }) {
     final averageQualityValue = _getAverageQuality(habit);
     final qualityTrend = _getQualityTrend(habit);
+    final streak = _getStreak(habit);
+    final successRate = _getSuccessRate(habit);
+    final tertiaryDetails = <String>[
+      if (averageQualityValue != null)
+        'Avg ${averageQualityValue.toStringAsFixed(1)} / 4',
+      if (qualityTrend != HabitQualityTrend.insufficientData)
+        qualityTrendLabel(qualityTrend),
+    ];
 
     return GestureDetector(
       onTap: () {
@@ -1387,11 +1916,12 @@ class _TodayScreenState extends State<TodayScreen> {
         child: Card(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(14.0),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(width: 10, height: 50, color: habit.color),
-                const SizedBox(width: 16),
+                Container(width: 8, height: 56, color: habit.color),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1404,8 +1934,8 @@ class _TodayScreenState extends State<TodayScreen> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
                                 decoration: isCompleted
                                     ? TextDecoration.lineThrough
                                     : TextDecoration.none,
@@ -1417,78 +1947,73 @@ class _TodayScreenState extends State<TodayScreen> {
                             const Icon(
                               Icons.star,
                               color: Colors.amber,
-                              size: 20,
+                              size: 18,
                             ),
                           ],
                         ],
                       ),
-                      Text(
-                        habit.description,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          decoration: isCompleted
-                              ? TextDecoration.lineThrough
-                              : TextDecoration.none,
+                      if (habit.description.trim().isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          habit.description,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                            decoration: isCompleted
+                                ? TextDecoration.lineThrough
+                                : TextDecoration.none,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
+                      ],
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
-                          Text('Streak: ${_getStreak(habit)}'),
-                          const SizedBox(width: 16),
-                          Text(
-                            'Success: ${_getSuccessRate(habit).toStringAsFixed(2)}%',
+                          _buildMetricChip('Streak $streak'),
+                          _buildMetricChip(
+                            'Success ${successRate.toStringAsFixed(0)}%',
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Text(
-                            averageQualityValue == null
-                                ? 'Avg: Unrated'
-                                : 'Avg: ${averageQualityValue.toStringAsFixed(1)} / 4',
+                      if (tertiaryDetails.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          tertiaryDetails.join(' | '),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
                           ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: qualityTrendColor(
-                                  qualityTrend,
-                                ).withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(4),
-                                border: Border.all(
-                                  color: qualityTrendColor(
-                                    qualityTrend,
-                                  ).withValues(alpha: 0.5),
-                                ),
-                              ),
-                              child: Text(
-                                qualityTrendLabel(qualityTrend),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: qualityTrendColor(qualityTrend),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                       if (log.completed && log.quality != null) ...[
                         const SizedBox(height: 6),
-                        Text('Today: ${qualityLabel(log.quality!)}'),
+                        Text(
+                          'Today: ${qualityLabel(log.quality!)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
                       ],
                       if (isTodayPaused) ...[
                         const SizedBox(height: 8),
-                        const Text('Tracking paused today'),
+                        Text(
+                          'Tracking paused today',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
                       ],
                       if (habit.useTimeVisibility &&
                           habit.visibleAfterHour != null &&
@@ -1496,10 +2021,22 @@ class _TodayScreenState extends State<TodayScreen> {
                         const SizedBox(height: 8),
                         Row(
                           children: [
-                            const Icon(Icons.schedule, size: 18),
+                            Icon(
+                              Icons.schedule,
+                              size: 16,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
                             const SizedBox(width: 4),
                             Text(
                               'Visible after ${formatHabitVisibleAfter(habit, context)!}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
                             ),
                           ],
                         ),
@@ -1508,9 +2045,23 @@ class _TodayScreenState extends State<TodayScreen> {
                         const SizedBox(height: 8),
                         Row(
                           children: [
-                            const Icon(Icons.timer_outlined, size: 18),
+                            Icon(
+                              Icons.timer_outlined,
+                              size: 16,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
                             const SizedBox(width: 4),
-                            Text(_formatTimerLabel(habit.timerMinutes!)),
+                            Text(
+                              _formatTimerLabel(habit.timerMinutes!),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
                             const SizedBox(width: 12),
                             TextButton(
                               onPressed: isTodayPaused
@@ -1525,35 +2076,60 @@ class _TodayScreenState extends State<TodayScreen> {
                   ),
                 ),
                 if (habit.type == HabitType.binary)
-                  Checkbox(
-                    value: log.completed,
-                    onChanged: isTodayPaused
-                        ? null
-                        : (value) {
-                            _toggleHabitCompletion(habit, value);
-                          },
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Checkbox(
+                      value: log.completed,
+                      onChanged: isTodayPaused
+                          ? null
+                          : (value) {
+                              _toggleHabitCompletion(habit, value);
+                            },
+                    ),
                   ),
                 if (habit.type == HabitType.counted)
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.remove),
-                        onPressed: isTodayPaused
-                            ? null
-                            : () => _decrementHabitCount(habit),
-                      ),
-                      Text('${log.count ?? 0} / ${habit.timesPerDay ?? ''}'),
-                      IconButton(
-                        icon: const Icon(Icons.add),
-                        onPressed: isTodayPaused
-                            ? null
-                            : () => _incrementHabitCount(habit),
-                      ),
-                    ],
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.remove),
+                          onPressed: isTodayPaused
+                              ? null
+                              : () => _decrementHabitCount(habit),
+                        ),
+                        Text('${log.count ?? 0} / ${habit.timesPerDay ?? ''}'),
+                        IconButton(
+                          icon: const Icon(Icons.add),
+                          onPressed: isTodayPaused
+                              ? null
+                              : () => _incrementHabitCount(habit),
+                        ),
+                      ],
+                    ),
                   ),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMetricChip(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
       ),
     );
