@@ -116,6 +116,28 @@ class _ManageEnvironmentsScreenState extends State<ManageEnvironmentsScreen> {
   }
 
   Future<void> _resetDefaults() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reset defaults'),
+        content: const Text(
+          'Are you sure you want to restore the built-in environments?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      return;
+    }
     await _saveEnvironments(defaultExecutionEnvironments());
   }
 
@@ -174,19 +196,33 @@ class _ManageEnvironmentsScreenState extends State<ManageEnvironmentsScreen> {
                       child: Icon(environment.icon, color: environment.color),
                     ),
                     title: Row(
+                      mainAxisSize: MainAxisSize.max,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Expanded(child: Text(environment.name)),
+                        Expanded(
+                          child: Text(
+                            environment.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                         if (environment.isBuiltIn)
                           const Padding(
                             padding: EdgeInsets.only(left: 8),
                             child: Chip(
                               label: Text('Built-in'),
                               visualDensity: VisualDensity.compact,
+                              materialTapTargetSize:
+                                  MaterialTapTargetSize.shrinkWrap,
                             ),
                           ),
                       ],
                     ),
-                    subtitle: Text(_subtitle(environment)),
+                    subtitle: Text(
+                      _subtitle(environment),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     trailing: Wrap(
                       spacing: 4,
                       children: [
