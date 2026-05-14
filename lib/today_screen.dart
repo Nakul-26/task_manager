@@ -982,14 +982,9 @@ class _TodayScreenState extends State<TodayScreen> {
     final activePause = _getActivePausePeriod();
     final nextPause = activePause ?? _getNextPausePeriod();
     final visibleHabits = List<Habit>.from(_habits);
-    final strategicAnchors = _buildStrategicAnchors(visibleHabits);
-    final bestForCurrentContext = _buildBestForCurrentContext(visibleHabits);
-    final deferredForCurrentContext = _buildDeferredForCurrentContext(
-      visibleHabits,
-    );
-    final anchorStats = _buildSectionStats(strategicAnchors);
-    final currentStats = _buildSectionStats(bestForCurrentContext);
-    final deferredStats = _buildSectionStats(deferredForCurrentContext);
+    final filteredHabits = _filterHabitsForSelectedContext(visibleHabits);
+    final priorityGroups = _buildPriorityGroups(filteredHabits);
+    final priorityStats = _buildPriorityStats(priorityGroups);
 
     return Scaffold(
       appBar: AppBar(
@@ -1098,49 +1093,21 @@ class _TodayScreenState extends State<TodayScreen> {
           _buildExecutionContextFilter(),
           const SizedBox(height: 8),
           _buildEnvironmentSummaryCard(
-            strategicAnchors: strategicAnchors,
-            currentHabits: bestForCurrentContext,
-            deferredHabits: deferredForCurrentContext,
+            priorityStats: priorityStats,
           ),
           const SizedBox(height: 8),
           _buildXpCard(),
           const SizedBox(height: 16),
-          _buildTaskSection(
-            title: 'Strategic Anchors',
-            subtitle:
-                'Always visible, even when they are not the easiest task right now.',
-            habits: strategicAnchors,
-            stats: anchorStats,
-            isTodayPaused: isTodayPaused,
-            emptyMessage: 'No strategic anchors are scheduled for today.',
-            sectionKey: 'anchors',
-          ),
-          const SizedBox(height: 12),
-          _buildTaskSection(
-            title: 'Best for Current Context',
-            subtitle: _selectedEnvironmentId == null
-                ? 'All non-anchor tasks are eligible here.'
-                : 'Fits ${environmentDisplayName(_environments, _selectedEnvironmentId!)} right now.',
-            habits: bestForCurrentContext,
-            stats: currentStats,
-            isTodayPaused: isTodayPaused,
-            emptyMessage: _selectedEnvironmentId == null
-                ? 'No non-anchor tasks are scheduled for today.'
-                : 'No tasks match this environment right now.',
-            sectionKey: 'current-context',
-          ),
-          if (_selectedEnvironmentId != null) ...[
-            const SizedBox(height: 12),
-            _buildTaskSection(
-              title: 'Deferred for Now',
-              subtitle:
-                  'Important work that does not fit the selected environment.',
-              habits: deferredForCurrentContext,
-              stats: deferredStats,
+          for (final level in PriorityLevel.values) ...[
+            ..._buildPriorityLevelWidgets(
+              level: level,
+              habits: priorityGroups[level] ?? const <Habit>[],
+              stats: priorityStats[level] ?? const _PriorityLevelStats(0, 0),
+              unlocked: _isLevelUnlocked(level, priorityStats),
               isTodayPaused: isTodayPaused,
-              emptyMessage: 'Nothing is deferred for this environment.',
-              sectionKey: 'deferred',
+              statsMap: priorityStats,
             ),
+            if (level != PriorityLevel.values.last) const SizedBox(height: 12),
           ],
           const SizedBox(height: 32),
         ],
@@ -1149,14 +1116,18 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   Widget _buildEnvironmentSummaryCard({
-    required List<Habit> strategicAnchors,
-    required List<Habit> currentHabits,
-    required List<Habit> deferredHabits,
+    required Map<PriorityLevel, _PriorityLevelStats> priorityStats,
   }) {
     final selectedEnvironmentId = _selectedEnvironmentId;
     final contextLabel = selectedEnvironmentId == null
         ? 'All environments'
         : environmentDisplayName(_environments, selectedEnvironmentId);
+    final coreStats =
+        priorityStats[PriorityLevel.core] ?? const _PriorityLevelStats(0, 0);
+    final importantStats = priorityStats[PriorityLevel.secondary] ??
+        const _PriorityLevelStats(0, 0);
+    final optionalStats = priorityStats[PriorityLevel.optional] ??
+        const _PriorityLevelStats(0, 0);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1168,16 +1139,15 @@ class _TodayScreenState extends State<TodayScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Adaptive execution',
+                'Execution overview',
                 style: TextStyle(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 8),
               Text('Current environment: $contextLabel'),
               const SizedBox(height: 10),
-              Text('Strategic anchors: ${strategicAnchors.length}'),
-              Text('Best for now: ${currentHabits.length}'),
-              if (selectedEnvironmentId != null)
-                Text('Deferred: ${deferredHabits.length}'),
+              Text('Core: ${coreStats.total}'),
+              Text('Important: ${importantStats.total}'),
+              Text('Optional: ${optionalStats.total}'),
             ],
           ),
         ),
@@ -1305,7 +1275,7 @@ class _TodayScreenState extends State<TodayScreen> {
     if ((stats[PriorityLevel.secondary]?.total ?? 0) > 0 &&
         _isLevelUnlocked(PriorityLevel.optional, stats)) {
       notifications.add(
-        _buildUnlockBanner('👉 Secondary tasks done — Optional tasks unlocked'),
+        _buildUnlockBanner('👉 Important habits done — Optional habits unlocked'),
       );
     }
     return notifications;
@@ -1749,7 +1719,7 @@ class _TodayScreenState extends State<TodayScreen> {
               ),
               const SizedBox(width: 8),
               Text(
-                'LEVEL ${level.levelNumber} • ${level.displayName}',
+                level.displayName,
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             ],
@@ -1789,8 +1759,8 @@ class _TodayScreenState extends State<TodayScreen> {
               .clamp(0, 100)
               .toStringAsFixed(0);
     final message = previousStats.total == 0
-        ? 'Add ${previousLevel.displayName} tasks to unlock ${level.displayName} tasks.'
-        : 'Complete $requirement ${previousLevel.displayName} tasks ($progressPercent% done) to unlock this level.';
+        ? 'Add ${previousLevel.displayName} habits to unlock ${level.displayName} habits.'
+        : 'Complete $requirement ${previousLevel.displayName} habits ($progressPercent% done) to unlock this level.';
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Card(
@@ -1827,7 +1797,7 @@ class _TodayScreenState extends State<TodayScreen> {
         margin: const EdgeInsets.symmetric(vertical: 4),
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Text('No ${level.displayName} tasks are scheduled for today.'),
+          child: Text('No ${level.displayName} habits are scheduled for today.'),
         ),
       ),
     );
@@ -1842,7 +1812,7 @@ class _TodayScreenState extends State<TodayScreen> {
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Text(
-            'All ${level.displayName} tasks completed.',
+            'All ${level.displayName} habits completed.',
             style: TextStyle(
               color: Colors.green.shade800,
               fontWeight: FontWeight.w600,

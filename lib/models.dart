@@ -68,7 +68,7 @@ extension PriorityLevelInfo on PriorityLevel {
       case PriorityLevel.core:
         return 'Core';
       case PriorityLevel.secondary:
-        return 'Secondary';
+        return 'Important';
       case PriorityLevel.optional:
         return 'Optional';
     }
