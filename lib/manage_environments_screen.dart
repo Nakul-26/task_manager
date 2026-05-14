@@ -218,6 +218,7 @@ class _ManageEnvironmentsScreenState extends State<ManageEnvironmentsScreen> {
           ? const Center(child: Text('No environments configured.'))
           : ReorderableListView.builder(
               padding: const EdgeInsets.only(bottom: 16),
+              buildDefaultDragHandles: false,
               itemCount: _environments.length,
               onReorder: _reorderEnvironments,
               itemBuilder: (context, index) {
@@ -270,7 +271,10 @@ class _ManageEnvironmentsScreenState extends State<ManageEnvironmentsScreen> {
                           onPressed: () =>
                               _showEnvironmentActions(context, environment),
                         ),
-                        const Icon(Icons.drag_handle),
+                        ReorderableDragStartListener(
+                          index: index,
+                          child: const Icon(Icons.drag_handle),
+                        ),
                       ],
                     ),
                   ),

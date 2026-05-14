@@ -53,6 +53,7 @@ class _TodayScreenState extends State<TodayScreen> {
   List<PausePeriod> _pausePeriods = [];
   List<ExecutionEnvironment> _environments = [];
   String? _selectedEnvironmentId;
+  final Map<PriorityLevel, bool> _expandedPrioritySections = {};
   final Map<PriorityLevel, bool> _expandedCompletedSections = {};
   final Map<String, bool> _expandedSectionCompleted = {};
   final Map<String, Timer> _pendingCompletionTimers = {};
@@ -110,9 +111,6 @@ class _TodayScreenState extends State<TodayScreen> {
         findExecutionEnvironment(_environments, _selectedEnvironmentId!) ==
             null) {
       _selectedEnvironmentId = null;
-    }
-    if (_selectedEnvironmentId == null && _environments.isNotEmpty) {
-      _selectedEnvironmentId = _environments.first.id;
     }
     if (mounted) {
       setState(() {});
@@ -1099,13 +1097,11 @@ class _TodayScreenState extends State<TodayScreen> {
           _buildXpCard(),
           const SizedBox(height: 16),
           for (final level in PriorityLevel.values) ...[
-            ..._buildPriorityLevelWidgets(
+            _buildPrioritySection(
               level: level,
               habits: priorityGroups[level] ?? const <Habit>[],
               stats: priorityStats[level] ?? const _PriorityLevelStats(0, 0),
-              unlocked: _isLevelUnlocked(level, priorityStats),
               isTodayPaused: isTodayPaused,
-              statsMap: priorityStats,
             ),
             if (level != PriorityLevel.values.last) const SizedBox(height: 12),
           ],
@@ -1153,6 +1149,155 @@ class _TodayScreenState extends State<TodayScreen> {
         ),
       ),
     );
+  }
+
+  Widget _buildPrioritySection({
+    required PriorityLevel level,
+    required List<Habit> habits,
+    required _PriorityLevelStats stats,
+    required bool isTodayPaused,
+  }) {
+    final isExpanded = _expandedPrioritySections[level] ?? true;
+    final activeHabits = habits
+        .where((habit) => !_isHabitShownAsCompletedToday(habit))
+        .toList();
+    final completedHabits = habits
+        .where(_isHabitShownAsCompletedToday)
+        .toList();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: InkWell(
+          onTap: () {
+            setState(() {
+              _expandedPrioritySections[level] =
+                  !(_expandedPrioritySections[level] ?? true);
+            });
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: level.accentColor,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        level.displayName,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    Text(
+                      '${stats.completed}/${stats.total}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      isExpanded ? Icons.expand_less : Icons.expand_more,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _prioritySectionSubtitle(level),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                if (isExpanded) ...[
+                  const SizedBox(height: 12),
+                  if (habits.isEmpty)
+                    Text('No ${level.displayName} habits are scheduled for today.')
+                  else ...[
+                    ...activeHabits.map((habit) {
+                      final log =
+                          _dailyCompletionStatus[habit.id] ??
+                          DailyLog(
+                            date: _formatDate(DateTime.now()),
+                            habitId: habit.id,
+                          );
+                      return _buildHabitCard(
+                        habit,
+                        log,
+                        isTodayPaused,
+                        isCompleted: false,
+                      );
+                    }),
+                    if (activeHabits.isEmpty && completedHabits.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          'All ${level.displayName} habits completed.',
+                          style: TextStyle(
+                            color: Colors.green.shade800,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    if (completedHabits.isNotEmpty) ...[
+                      _buildSectionCompletedHeader(
+                        level: level,
+                        completedCount: completedHabits.length,
+                      ),
+                      AnimatedCrossFade(
+                        duration: const Duration(milliseconds: 200),
+                        crossFadeState:
+                            (_expandedCompletedSections[level] ?? false)
+                                ? CrossFadeState.showFirst
+                                : CrossFadeState.showSecond,
+                        firstChild: Column(
+                          children: completedHabits.map((habit) {
+                            final log =
+                                _dailyCompletionStatus[habit.id] ??
+                                DailyLog(
+                                  date: _formatDate(DateTime.now()),
+                                  habitId: habit.id,
+                                );
+                            return _buildHabitCard(
+                              habit,
+                              log,
+                              isTodayPaused,
+                              isCompleted: true,
+                            );
+                          }).toList(),
+                        ),
+                        secondChild: const SizedBox.shrink(),
+                      ),
+                    ],
+                  ],
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _prioritySectionSubtitle(PriorityLevel level) {
+    switch (level) {
+      case PriorityLevel.core:
+        return 'Most important work for today.';
+      case PriorityLevel.secondary:
+        return 'Important work that still matters now.';
+      case PriorityLevel.optional:
+        return 'Lower-priority work you can do if time allows.';
+    }
   }
 
   Widget _buildExecutionContextFilter() {
@@ -1271,14 +1416,7 @@ class _TodayScreenState extends State<TodayScreen> {
   List<Widget> _buildUnlockAnnouncements(
     Map<PriorityLevel, _PriorityLevelStats> stats,
   ) {
-    final notifications = <Widget>[];
-    if ((stats[PriorityLevel.secondary]?.total ?? 0) > 0 &&
-        _isLevelUnlocked(PriorityLevel.optional, stats)) {
-      notifications.add(
-        _buildUnlockBanner('👉 Important habits done — Optional habits unlocked'),
-      );
-    }
-    return notifications;
+    return const <Widget>[];
   }
 
   Widget _buildUnlockBanner(String message) {
