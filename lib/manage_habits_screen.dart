@@ -318,29 +318,41 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
   Future<void> _showExportActions() async {
     final action = await showModalBottomSheet<_HabitsExportAction>(
       context: context,
+      isScrollControlled: true,
       showDragHandle: true,
       builder: (sheetContext) {
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.save_alt),
-                title: const Text('Export File'),
-                subtitle: const Text('Save a JSON backup to your Downloads folder'),
-                onTap: () => Navigator.of(sheetContext).pop(
-                  _HabitsExportAction.exportFile,
-                ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(sheetContext).size.height * 0.8,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.save_alt),
+                    title: const Text('Export File'),
+                    subtitle: const Text(
+                      'Save a JSON backup to your Downloads folder',
+                    ),
+                    onTap: () => Navigator.of(sheetContext).pop(
+                      _HabitsExportAction.exportFile,
+                    ),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.ios_share),
+                    title: const Text('Share Backup'),
+                    subtitle: const Text(
+                      'Open the share sheet with the backup file',
+                    ),
+                    onTap: () => Navigator.of(sheetContext).pop(
+                      _HabitsExportAction.shareFile,
+                    ),
+                  ),
+                ],
               ),
-              ListTile(
-                leading: const Icon(Icons.ios_share),
-                title: const Text('Share Backup'),
-                subtitle: const Text('Open the share sheet with the backup file'),
-                onTap: () => Navigator.of(sheetContext).pop(
-                  _HabitsExportAction.shareFile,
-                ),
-              ),
-            ],
+            ),
           ),
         );
       },
@@ -372,82 +384,93 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
     final currentIndex = _activeHabits.indexWhere((item) => item.id == habit.id);
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       showDragHandle: true,
       builder: (context) {
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.edit),
-                title: const Text('Edit'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _openEditHabit(habit);
-                },
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.8,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.edit),
+                    title: const Text('Edit'),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      _openEditHabit(habit);
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.vertical_align_top),
+                    title: const Text('Move to top'),
+                    enabled: currentIndex > 0,
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      _moveHabitByOffset(habit, -_activeHabits.length);
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.arrow_upward),
+                    title: const Text('Move up'),
+                    enabled: currentIndex > 0,
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      _moveHabitByOffset(habit, -1);
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.arrow_downward),
+                    title: const Text('Move down'),
+                    enabled:
+                        currentIndex >= 0 &&
+                        currentIndex < _activeHabits.length - 1,
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      _moveHabitByOffset(habit, 1);
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.vertical_align_bottom),
+                    title: const Text('Move to bottom'),
+                    enabled:
+                        currentIndex >= 0 &&
+                        currentIndex < _activeHabits.length - 1,
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      _moveHabitByOffset(habit, _activeHabits.length);
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.pin_outlined),
+                    title: const Text('Set exact order'),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      _moveHabitToPosition(habit);
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.archive_outlined),
+                    title: const Text('Archive'),
+                    onTap: () async {
+                      Navigator.of(context).pop();
+                      await _setArchiveStatus(habit, true);
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.delete_outline),
+                    title: const Text('Delete'),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      _deleteHabit(habit);
+                    },
+                  ),
+                ],
               ),
-              ListTile(
-                leading: const Icon(Icons.vertical_align_top),
-                title: const Text('Move to top'),
-                enabled: currentIndex > 0,
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _moveHabitByOffset(habit, -_activeHabits.length);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.arrow_upward),
-                title: const Text('Move up'),
-                enabled: currentIndex > 0,
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _moveHabitByOffset(habit, -1);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.arrow_downward),
-                title: const Text('Move down'),
-                enabled: currentIndex >= 0 && currentIndex < _activeHabits.length - 1,
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _moveHabitByOffset(habit, 1);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.vertical_align_bottom),
-                title: const Text('Move to bottom'),
-                enabled: currentIndex >= 0 &&
-                    currentIndex < _activeHabits.length - 1,
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _moveHabitByOffset(habit, _activeHabits.length);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.pin_outlined),
-                title: const Text('Set exact order'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _moveHabitToPosition(habit);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.archive_outlined),
-                title: const Text('Archive'),
-                onTap: () async {
-                  Navigator.of(context).pop();
-                  await _setArchiveStatus(habit, true);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.delete_outline),
-                title: const Text('Delete'),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _deleteHabit(habit);
-                },
-              ),
-            ],
+            ),
           ),
         );
       },
