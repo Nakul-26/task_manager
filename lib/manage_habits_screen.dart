@@ -43,13 +43,7 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
           .toList();
       final activeHabits = habits.where((habit) => !habit.isArchived).toList();
       _ensureSortOrder(activeHabits);
-      activeHabits.sort((a, b) {
-        final scoreCompare = b.importanceScore.compareTo(a.importanceScore);
-        if (scoreCompare != 0) {
-          return scoreCompare;
-        }
-        return a.sortOrder.compareTo(b.sortOrder);
-      });
+      activeHabits.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
       setState(() {
         _activeHabits = activeHabits;
       });
@@ -85,6 +79,98 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
       }
       final habit = _activeHabits.removeAt(oldIndex);
       _activeHabits.insert(newIndex, habit);
+      _persistOrder();
+    });
+  }
+
+  void _moveHabitByOffset(Habit habit, int offset) {
+    final currentIndex = _activeHabits.indexWhere((item) => item.id == habit.id);
+    if (currentIndex < 0) {
+      return;
+    }
+
+    final targetIndex = (currentIndex + offset).clamp(
+      0,
+      _activeHabits.length - 1,
+    ) as int;
+    if (targetIndex == currentIndex) {
+      return;
+    }
+
+    setState(() {
+      final moved = _activeHabits.removeAt(currentIndex);
+      _activeHabits.insert(targetIndex, moved);
+      _persistOrder();
+    });
+  }
+
+  Future<void> _moveHabitToPosition(Habit habit) async {
+    final currentIndex = _activeHabits.indexWhere((item) => item.id == habit.id);
+    if (currentIndex < 0) {
+      return;
+    }
+
+    final controller = TextEditingController(
+      text: (currentIndex + 1).toString(),
+    );
+    final formKey = GlobalKey<FormState>();
+    final requestedPosition = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Set habit order'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: 'Order number',
+              helperText: 'Enter a number between 1 and ${_activeHabits.length}',
+            ),
+            validator: (value) {
+              final parsed = int.tryParse(value?.trim() ?? '');
+              if (parsed == null) {
+                return 'Enter a whole number';
+              }
+              if (parsed < 1 || parsed > _activeHabits.length) {
+                return 'Enter a number from 1 to ${_activeHabits.length}';
+              }
+              return null;
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              if (formKey.currentState?.validate() ?? false) {
+                Navigator.of(dialogContext).pop(
+                  int.parse(controller.text.trim()),
+                );
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    if (requestedPosition == null) {
+      return;
+    }
+
+    final targetIndex = requestedPosition - 1;
+    if (targetIndex == currentIndex) {
+      return;
+    }
+
+    setState(() {
+      final moved = _activeHabits.removeAt(currentIndex);
+      _activeHabits.insert(targetIndex, moved);
       _persistOrder();
     });
   }
@@ -283,6 +369,7 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
   }
 
   void _showHabitActions(BuildContext context, Habit habit) {
+    final currentIndex = _activeHabits.indexWhere((item) => item.id == habit.id);
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -297,6 +384,51 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
                 onTap: () {
                   Navigator.of(context).pop();
                   _openEditHabit(habit);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.vertical_align_top),
+                title: const Text('Move to top'),
+                enabled: currentIndex > 0,
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _moveHabitByOffset(habit, -_activeHabits.length);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.arrow_upward),
+                title: const Text('Move up'),
+                enabled: currentIndex > 0,
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _moveHabitByOffset(habit, -1);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.arrow_downward),
+                title: const Text('Move down'),
+                enabled: currentIndex >= 0 && currentIndex < _activeHabits.length - 1,
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _moveHabitByOffset(habit, 1);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.vertical_align_bottom),
+                title: const Text('Move to bottom'),
+                enabled: currentIndex >= 0 &&
+                    currentIndex < _activeHabits.length - 1,
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _moveHabitByOffset(habit, _activeHabits.length);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.pin_outlined),
+                title: const Text('Set exact order'),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  _moveHabitToPosition(habit);
                 },
               ),
               ListTile(
@@ -369,9 +501,19 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
                     horizontal: 16,
                     vertical: 6,
                   ),
-                  leading: ReorderableDragStartListener(
-                    index: index,
-                    child: const Icon(Icons.drag_handle),
+                  leading: SizedBox(
+                    width: 72,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _OrderBadge(number: index + 1),
+                        const SizedBox(width: 8),
+                        ReorderableDragStartListener(
+                          index: index,
+                          child: const Icon(Icons.drag_handle),
+                        ),
+                      ],
+                    ),
                   ),
                   title: Text(
                     habit.name,
@@ -398,3 +540,30 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
 }
 
 enum _HabitsExportAction { exportFile, shareFile }
+
+class _OrderBadge extends StatelessWidget {
+  final int number;
+
+  const _OrderBadge({required this.number});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 28,
+      height: 28,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primaryContainer,
+        shape: BoxShape.circle,
+      ),
+      child: Text(
+        number.toString(),
+        style: TextStyle(
+          fontWeight: FontWeight.w700,
+          color: Theme.of(context).colorScheme.onPrimaryContainer,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+}

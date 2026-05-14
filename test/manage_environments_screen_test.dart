@@ -38,7 +38,7 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(home: ManageEnvironmentsScreen()),
     );
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 200));
 
     final title = tester.widget<Text>(find.text('Deep Work'));
     expect(title.maxLines, 1);
@@ -71,13 +71,13 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(home: ManageEnvironmentsScreen()),
     );
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 200));
 
     expect(find.text('Lab'), findsOneWidget);
     expect(find.text('Deep Work'), findsNothing);
 
     await tester.tap(find.byTooltip('Reset defaults'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.text('Reset defaults'), findsOneWidget);
     expect(
@@ -86,14 +86,14 @@ void main() {
     );
 
     await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.text('Lab'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Reset defaults'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
     await tester.tap(find.text('Reset'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.text('Lab'), findsNothing);
     expect(find.text('Deep Work'), findsOneWidget);
@@ -121,10 +121,10 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(home: ManageEnvironmentsScreen()),
     );
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 200));
 
     await tester.tap(find.byTooltip('Environment actions'));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.text('Edit environment'), findsOneWidget);
     expect(find.text('Delete environment'), findsOneWidget);

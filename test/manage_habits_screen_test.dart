@@ -96,4 +96,42 @@ void main() {
     expect(exportedHabit.containsKey('reminderEnabled'), isFalse);
     expect(exportedHabit.containsKey('color'), isFalse);
   });
+
+  testWidgets('shows habit order numbers and ordering actions', (
+    tester,
+  ) async {
+    await Hive.box(habitsBoxName).putAll({
+      'habit-1': Habit(
+        id: 'habit-1',
+        name: 'Read',
+        description: 'Daily reading',
+        sortOrder: 0,
+        createdAt: DateTime(2026, 5, 12, 10, 30),
+      ).toMap(),
+      'habit-2': Habit(
+        id: 'habit-2',
+        name: 'Walk',
+        description: 'Evening walk',
+        sortOrder: 1,
+        createdAt: DateTime(2026, 5, 12, 10, 31),
+      ).toMap(),
+    });
+
+    await tester.pumpWidget(
+      const MaterialApp(home: ManageHabitsScreen()),
+    );
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.text('1'), findsWidgets);
+    expect(find.text('2'), findsWidgets);
+
+    await tester.tap(find.byTooltip('Habit actions').first);
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('Move to top'), findsOneWidget);
+    expect(find.text('Move up'), findsOneWidget);
+    expect(find.text('Move down'), findsOneWidget);
+    expect(find.text('Move to bottom'), findsOneWidget);
+    expect(find.text('Set exact order'), findsOneWidget);
+  });
 }
