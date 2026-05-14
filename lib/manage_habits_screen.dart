@@ -21,6 +21,7 @@ class ManageHabitsScreen extends StatefulWidget {
 class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
   late Box<dynamic> _habitBox;
   List<Habit> _activeHabits = [];
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -48,6 +49,18 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
         _activeHabits = activeHabits;
       });
     }
+  }
+
+  List<Habit> get _filteredHabits {
+    final query = _searchQuery.trim().toLowerCase();
+    if (query.isEmpty) {
+      return _activeHabits;
+    }
+    return _activeHabits.where((habit) {
+      return habit.name.toLowerCase().contains(query) ||
+          habit.description.toLowerCase().contains(query) ||
+          habit.environmentId.toLowerCase().contains(query);
+    }).toList();
   }
 
   void _ensureSortOrder(List<Habit> habits) {
@@ -223,6 +236,15 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
           MaterialPageRoute(builder: (context) => const AddEditHabitScreen()),
         )
         .then((_) => _loadHabits());
+  }
+
+  void _clearSearch() {
+    if (_searchQuery.isEmpty) {
+      return;
+    }
+    setState(() {
+      _searchQuery = '';
+    });
   }
 
   Map<String, dynamic> _buildHabitsExportPayload() {
@@ -510,54 +532,131 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
       ),
       body: _activeHabits.isEmpty
           ? const Center(child: Text('No habits yet.'))
-          : ReorderableListView.builder(
-              padding: const EdgeInsets.only(bottom: 16),
-              buildDefaultDragHandles: false,
-              onReorder: _onReorder,
-              itemCount: _activeHabits.length,
-              itemBuilder: (context, index) {
-                final habit = _activeHabits[index];
-                return ListTile(
-                  key: ValueKey(habit.id),
-                  isThreeLine: habit.description.trim().isNotEmpty,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 6,
-                  ),
-                  leading: SizedBox(
-                    width: 72,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _OrderBadge(number: index + 1),
-                        const SizedBox(width: 8),
-                        ReorderableDragStartListener(
-                          index: index,
-                          child: const Icon(Icons.drag_handle),
-                        ),
-                      ],
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: TextField(
+                    onChanged: (value) {
+                      setState(() {
+                        _searchQuery = value;
+                      });
+                    },
+                    decoration: InputDecoration(
+                      labelText: 'Search habits',
+                      hintText: 'Name, description, or environment',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: _searchQuery.isEmpty
+                          ? null
+                          : IconButton(
+                              tooltip: 'Clear search',
+                              icon: const Icon(Icons.clear),
+                              onPressed: _clearSearch,
+                            ),
+                      border: const OutlineInputBorder(),
                     ),
                   ),
-                  title: Text(
-                    habit.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: habit.description.trim().isEmpty
-                      ? null
-                      : Text(
-                          habit.description,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                ),
+                if (_searchQuery.trim().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '${_filteredHabits.length} result${_filteredHabits.length == 1 ? '' : 's'}',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.more_vert),
-                    tooltip: 'Habit actions',
-                    onPressed: () => _showHabitActions(context, habit),
+                      ),
+                    ),
                   ),
-                );
-              },
+                const SizedBox(height: 8),
+                Expanded(
+                  child: _searchQuery.trim().isEmpty
+                      ? ReorderableListView.builder(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          buildDefaultDragHandles: false,
+                          onReorder: _onReorder,
+                          itemCount: _activeHabits.length,
+                          itemBuilder: (context, index) {
+                            final habit = _activeHabits[index];
+                            return _buildHabitTile(
+                              habit: habit,
+                              displayIndex: index + 1,
+                              draggable: true,
+                              reorderIndex: index,
+                            );
+                          },
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          itemCount: _filteredHabits.length,
+                          itemBuilder: (context, index) {
+                            final habit = _filteredHabits[index];
+                            final fullIndex = _activeHabits.indexWhere(
+                              (item) => item.id == habit.id,
+                            );
+                            return _buildHabitTile(
+                              habit: habit,
+                              displayIndex: fullIndex + 1,
+                              draggable: false,
+                              reorderIndex: null,
+                            );
+                          },
+                        ),
+                ),
+              ],
             ),
+    );
+  }
+
+  Widget _buildHabitTile({
+    required Habit habit,
+    required int displayIndex,
+    required bool draggable,
+    required int? reorderIndex,
+  }) {
+    return ListTile(
+      key: ValueKey(habit.id),
+      isThreeLine: habit.description.trim().isNotEmpty,
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 6,
+      ),
+      leading: SizedBox(
+        width: 72,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _OrderBadge(number: displayIndex),
+            const SizedBox(width: 8),
+            if (draggable && reorderIndex != null)
+              ReorderableDragStartListener(
+                index: reorderIndex,
+                child: const Icon(Icons.drag_handle),
+              )
+            else
+              const Icon(Icons.drag_handle, color: Colors.transparent),
+          ],
+        ),
+      ),
+      title: Text(
+        habit.name,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: habit.description.trim().isEmpty
+          ? null
+          : Text(
+              habit.description,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+      trailing: IconButton(
+        icon: const Icon(Icons.more_vert),
+        tooltip: 'Habit actions',
+        onPressed: () => _showHabitActions(context, habit),
+      ),
     );
   }
 }

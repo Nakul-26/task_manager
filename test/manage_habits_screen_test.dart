@@ -134,4 +134,46 @@ void main() {
     expect(find.text('Move to bottom'), findsOneWidget);
     expect(find.text('Set exact order'), findsOneWidget);
   });
+
+  testWidgets('search filters habits by name and description', (
+    tester,
+  ) async {
+    await Hive.box(habitsBoxName).putAll({
+      'habit-1': Habit(
+        id: 'habit-1',
+        name: 'Read',
+        description: 'Daily reading',
+        sortOrder: 0,
+        createdAt: DateTime(2026, 5, 12, 10, 30),
+      ).toMap(),
+      'habit-2': Habit(
+        id: 'habit-2',
+        name: 'Walk',
+        description: 'Evening walk',
+        sortOrder: 1,
+        createdAt: DateTime(2026, 5, 12, 10, 31),
+      ).toMap(),
+    });
+
+    await tester.pumpWidget(
+      const MaterialApp(home: ManageHabitsScreen()),
+    );
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.text('Read'), findsOneWidget);
+    expect(find.text('Walk'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'walk');
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.text('Read'), findsNothing);
+    expect(find.text('Walk'), findsOneWidget);
+    expect(find.text('1 result'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Clear search'));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.text('Read'), findsOneWidget);
+    expect(find.text('Walk'), findsOneWidget);
+  });
 }
