@@ -81,6 +81,44 @@ class _ManageEnvironmentsScreenState extends State<ManageEnvironmentsScreen> {
     await _saveEnvironments(updated);
   }
 
+  void _showEnvironmentActions(
+    BuildContext context,
+    ExecutionEnvironment environment,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.edit),
+                title: const Text('Edit environment'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _openEditor(environment: environment);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline),
+                title: const Text('Delete environment'),
+                enabled: !environment.isBuiltIn,
+                onTap: environment.isBuiltIn
+                    ? null
+                    : () {
+                        Navigator.of(sheetContext).pop();
+                        _deleteEnvironment(environment);
+                      },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _deleteEnvironment(ExecutionEnvironment environment) async {
     if (environment.isBuiltIn) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -227,14 +265,10 @@ class _ManageEnvironmentsScreenState extends State<ManageEnvironmentsScreen> {
                       spacing: 4,
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.edit),
-                          onPressed: () => _openEditor(environment: environment),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: environment.isBuiltIn
-                              ? null
-                              : () => _deleteEnvironment(environment),
+                          icon: const Icon(Icons.more_vert),
+                          tooltip: 'Environment actions',
+                          onPressed: () =>
+                              _showEnvironmentActions(context, environment),
                         ),
                         const Icon(Icons.drag_handle),
                       ],

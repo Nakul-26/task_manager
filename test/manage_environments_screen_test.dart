@@ -100,4 +100,33 @@ void main() {
     expect(find.text('College'), findsOneWidget);
     expect(find.text('Quick Task'), findsOneWidget);
   });
+
+  testWidgets('Environment actions open from the three-dot menu', (
+    WidgetTester tester,
+  ) async {
+    await saveExecutionEnvironments(
+      Hive.box(appSettingsBoxName),
+      const [
+        ExecutionEnvironment(
+          id: 'lab',
+          name: 'Lab',
+          description: 'Custom environment',
+          color: Colors.green,
+          iconKey: 'work',
+          sortOrder: 0,
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      const MaterialApp(home: ManageEnvironmentsScreen()),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Environment actions'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit environment'), findsOneWidget);
+    expect(find.text('Delete environment'), findsOneWidget);
+  });
 }
