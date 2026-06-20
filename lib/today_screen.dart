@@ -42,7 +42,7 @@ class TodayScreen extends StatefulWidget {
 }
 
 class _TodayScreenState extends State<TodayScreen> {
-  static const Duration _completionMoveDelay = Duration(milliseconds: 500);
+  static const Duration _completionMoveDelay = Duration(milliseconds: 250);
   late Box _habitBox;
   late Box _dailyLogBox;
   late Box _settingsBox;
