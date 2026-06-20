@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/habit_details_screen.dart';
@@ -18,8 +19,13 @@ class HistoryScreenState extends State<HistoryScreen> {
   late Box _habitBox;
   late Box _dailyLogBox;
   late Box _settingsBox;
+  late ValueListenable<Box> _dailyLogListenable;
   List<Habit> _habits = [];
   List<PausePeriod> _pausePeriods = [];
+
+  // Cached statistics to improve performance
+  final Map<String, int> _cachedStreaks = {};
+  final Map<String, double> _cachedSuccessRates = {};
 
   @override
   void initState() {
@@ -27,9 +33,11 @@ class HistoryScreenState extends State<HistoryScreen> {
     _habitBox = Hive.box(HiveBoxNames.habits);
     _dailyLogBox = Hive.box(HiveBoxNames.dailyLogs);
     _settingsBox = Hive.box(HiveBoxNames.appSettings);
+    _dailyLogListenable = _dailyLogBox.listenable();
     _loadHabits();
     _habitBox.listenable().addListener(_loadHabits);
     _settingsBox.listenable().addListener(_loadPausePeriods);
+    _dailyLogListenable.addListener(_loadHabits);
     _loadPausePeriods();
   }
 
@@ -37,6 +45,7 @@ class HistoryScreenState extends State<HistoryScreen> {
   void dispose() {
     _habitBox.listenable().removeListener(_loadHabits);
     _settingsBox.listenable().removeListener(_loadPausePeriods);
+    _dailyLogListenable.removeListener(_loadHabits);
     super.dispose();
   }
 
@@ -53,7 +62,19 @@ class HistoryScreenState extends State<HistoryScreen> {
             }
             return a.sortOrder.compareTo(b.sortOrder);
           });
-    setState(() {});
+    _calculateAllStats();
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _calculateAllStats() {
+    _cachedStreaks.clear();
+    _cachedSuccessRates.clear();
+    for (final habit in _habits) {
+      _cachedStreaks[habit.id] = _getStreak(habit);
+      _cachedSuccessRates[habit.id] = _getSuccessRate(habit);
+    }
   }
 
   void _loadPausePeriods() {
@@ -227,10 +248,10 @@ class HistoryScreenState extends State<HistoryScreen> {
                                 const SizedBox(height: 8),
                                 Row(
                                   children: [
-                                    Text('Streak: ${_getStreak(habit)}'),
+                                    Text('Streak: ${_cachedStreaks[habit.id] ?? 0}'),
                                     const SizedBox(width: 16),
                                     Text(
-                                      'Success: ${_getSuccessRate(habit).toStringAsFixed(2)}%',
+                                      'Success: ${(_cachedSuccessRates[habit.id] ?? 0.0).toStringAsFixed(2)}%',
                                     ),
                                   ],
                                 ),

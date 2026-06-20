@@ -105,7 +105,7 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
     final targetIndex = (currentIndex + offset).clamp(
       0,
       _activeHabits.length - 1,
-    ) as int;
+    );
     if (targetIndex == currentIndex) {
       return;
     }

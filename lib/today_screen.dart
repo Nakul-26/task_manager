@@ -42,12 +42,13 @@ class TodayScreen extends StatefulWidget {
 }
 
 class _TodayScreenState extends State<TodayScreen> {
-  static const Duration _completionMoveDelay = Duration(seconds: 1);
+  static const Duration _completionMoveDelay = Duration(milliseconds: 500);
   late Box _habitBox;
   late Box _dailyLogBox;
   late Box _settingsBox;
   late ValueListenable<Box> _habitListenable;
   late ValueListenable<Box> _settingsListenable;
+  late ValueListenable<Box> _dailyLogListenable;
   List<Habit> _habits = [];
   Map<String, DailyLog> _dailyCompletionStatus = {};
   List<PausePeriod> _pausePeriods = [];
@@ -61,6 +62,12 @@ class _TodayScreenState extends State<TodayScreen> {
   DateTime? _emergencyUnlockDate;
   Timer? _visibilityRefreshTimer;
 
+  // Cached statistics to improve performance
+  final Map<String, double?> _cachedAverageQualities = {};
+  final Map<String, HabitQualityTrend> _cachedQualityTrends = {};
+  final Map<String, int> _cachedStreaks = {};
+  final Map<String, double> _cachedSuccessRates = {};
+
   @override
   void initState() {
     super.initState();
@@ -69,6 +76,7 @@ class _TodayScreenState extends State<TodayScreen> {
     _settingsBox = Hive.box(HiveBoxNames.appSettings);
     _habitListenable = _habitBox.listenable();
     _settingsListenable = _settingsBox.listenable();
+    _dailyLogListenable = _dailyLogBox.listenable();
     _loadPriorityMetadata();
     _loadEnvironmentSettings();
     _loadHabits();
@@ -76,6 +84,7 @@ class _TodayScreenState extends State<TodayScreen> {
     _habitListenable.addListener(_loadHabits);
     _settingsListenable.addListener(_loadEnvironmentSettings);
     _settingsListenable.addListener(_loadPausePeriods);
+    _dailyLogListenable.addListener(_onDailyLogBoxChanged);
     _loadPausePeriods();
   }
 
@@ -88,7 +97,25 @@ class _TodayScreenState extends State<TodayScreen> {
     _habitListenable.removeListener(_loadHabits);
     _settingsListenable.removeListener(_loadEnvironmentSettings);
     _settingsListenable.removeListener(_loadPausePeriods);
+    _dailyLogListenable.removeListener(_onDailyLogBoxChanged);
     super.dispose();
+  }
+
+  void _onDailyLogBoxChanged() {
+    _loadHabits();
+  }
+
+  void _calculateAllStats() {
+    _cachedAverageQualities.clear();
+    _cachedQualityTrends.clear();
+    _cachedStreaks.clear();
+    _cachedSuccessRates.clear();
+    for (final habit in _habits) {
+      _cachedAverageQualities[habit.id] = _getAverageQuality(habit);
+      _cachedQualityTrends[habit.id] = _getQualityTrend(habit);
+      _cachedStreaks[habit.id] = _getStreak(habit);
+      _cachedSuccessRates[habit.id] = _getSuccessRate(habit);
+    }
   }
 
   DateTime _normalizeDate(DateTime date) {
@@ -207,7 +234,8 @@ class _TodayScreenState extends State<TodayScreen> {
           return a.sortOrder.compareTo(b.sortOrder);
         });
 
-    _checkDailyReset();
+    await _checkDailyReset();
+    _calculateAllStats();
     if (mounted) {
       setState(() {});
     }
@@ -1250,7 +1278,7 @@ class _TodayScreenState extends State<TodayScreen> {
                         ),
                       ),
                     if (completedHabits.isNotEmpty) ...[
-                      _buildSectionCompletedHeader(
+                      _buildCompletedSectionHeader(
                         level: level,
                         completedCount: completedHabits.length,
                       ),
@@ -2000,10 +2028,10 @@ class _TodayScreenState extends State<TodayScreen> {
     bool isTodayPaused, {
     bool isCompleted = false,
   }) {
-    final averageQualityValue = _getAverageQuality(habit);
-    final qualityTrend = _getQualityTrend(habit);
-    final streak = _getStreak(habit);
-    final successRate = _getSuccessRate(habit);
+    final averageQualityValue = _cachedAverageQualities[habit.id];
+    final qualityTrend = _cachedQualityTrends[habit.id] ?? HabitQualityTrend.insufficientData;
+    final streak = _cachedStreaks[habit.id] ?? 0;
+    final successRate = _cachedSuccessRates[habit.id] ?? 0.0;
     final tertiaryDetails = <String>[
       if (averageQualityValue != null)
         'Avg ${averageQualityValue.toStringAsFixed(1)} / 4',
