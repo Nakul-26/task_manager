@@ -249,6 +249,7 @@ class Habit {
   late DateTime createdAt;
   late DateTime? archivedAt;
   late int sortOrder;
+  late List<PausePeriod> pausePeriods;
   late List<HabitRuleSnapshot> ruleHistory;
 
   Habit({
@@ -278,9 +279,11 @@ class Habit {
     required this.createdAt,
     this.archivedAt,
     this.sortOrder = -1,
+    List<PausePeriod>? pausePeriods,
     List<HabitRuleSnapshot>? ruleHistory,
   }) : environmentId = environmentId ?? _defaultEnvironmentIdFor(executionContext),
        startDate = startDate ?? createdAt {
+    this.pausePeriods = pausePeriods ?? [];
     this.ruleHistory =
         (ruleHistory == null || ruleHistory.isEmpty)
             ? [
@@ -321,6 +324,7 @@ class Habit {
       'createdAt': createdAt.toIso8601String(),
       'archivedAt': archivedAt?.toIso8601String(),
       'sortOrder': sortOrder,
+      'pausePeriods': pausePeriods.map((period) => period.toMap()).toList(),
       'ruleHistory': ruleHistory.map((rule) => rule.toMap()).toList(),
     };
   }
@@ -397,6 +401,9 @@ class Habit {
     if (sortOrder >= 0) {
       map['sortOrder'] = sortOrder;
     }
+    if (pausePeriods.isNotEmpty) {
+      map['pausePeriods'] = pausePeriods.map((period) => period.toMap()).toList();
+    }
 
     return map;
   }
@@ -412,6 +419,12 @@ class Habit {
             .map((entry) => HabitRuleSnapshot.fromMap(Map<String, dynamic>.from(entry as Map)))
             .toList()
         : <HabitRuleSnapshot>[];
+    final parsedPausePeriods = map['pausePeriods'];
+    final pausePeriods = parsedPausePeriods is List
+        ? parsedPausePeriods
+            .map((entry) => PausePeriod.fromMap(Map<String, dynamic>.from(entry as Map)))
+            .toList()
+        : <PausePeriod>[];
     return Habit(
       id: map['id'],
       name: map['name'],
@@ -445,6 +458,7 @@ class Habit {
           ? DateTime.parse(map['archivedAt'])
           : null,
       sortOrder: map['sortOrder'] ?? -1,
+      pausePeriods: pausePeriods,
       ruleHistory: ruleHistory.isEmpty
           ? [
               HabitRuleSnapshot(

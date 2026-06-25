@@ -42,7 +42,7 @@ class TodayScreen extends StatefulWidget {
 }
 
 class _TodayScreenState extends State<TodayScreen> {
-  static const Duration _completionMoveDelay = Duration(milliseconds: 250);
+  static const Duration _completionMoveDelay = Duration(milliseconds: 150);
   late Box _habitBox;
   late Box _dailyLogBox;
   late Box _settingsBox;
@@ -514,6 +514,9 @@ class _TodayScreenState extends State<TodayScreen> {
         () async {
           _pendingCompletionTimers.remove(habit.id);
           _applyRuleSnapshot(log, habit);
+          if (mounted) {
+            setState(() {});
+          }
           await _dailyLogBox.put('${habit.id}_$today', log.toMap());
           final updatedXp = await _tryAwardXpForCompletion(
             habit,
@@ -523,11 +526,11 @@ class _TodayScreenState extends State<TodayScreen> {
           if (!mounted) {
             return;
           }
-          setState(() {
-            if (updatedXp != null) {
+          if (updatedXp != null) {
+            setState(() {
               _totalXp = updatedXp;
-            }
-          });
+            });
+          }
         },
       );
       return;
@@ -697,7 +700,7 @@ class _TodayScreenState extends State<TodayScreen> {
     final startDate = normalizedEnd.subtract(Duration(days: days - 1));
     DateTime date = startDate;
     while (!date.isAfter(normalizedEnd)) {
-      if (_isPaused(date) || !schedule_utils.isScheduledDay(habit, date)) {
+      if (_isHabitPaused(habit, date) || !schedule_utils.isScheduledDay(habit, date)) {
         date = date.add(const Duration(days: 1));
         continue;
       }
@@ -752,7 +755,7 @@ class _TodayScreenState extends State<TodayScreen> {
         : today;
     final shouldExcludeToday =
         _isSameDate(statsEnd, today) &&
-        !_isPaused(today) &&
+        !_isHabitPaused(habit, today) &&
         schedule_utils.isScheduledDay(habit, today) &&
         !_isHabitCompletedOnDate(habit, today);
     final effectiveStatsEnd = shouldExcludeToday
@@ -785,7 +788,7 @@ class _TodayScreenState extends State<TodayScreen> {
     final normalizedStart = _normalizeDate(habit.startDate);
     DateTime date = statsEnd;
     while (!date.isBefore(normalizedStart)) {
-      if (_isPaused(date)) {
+      if (_isHabitPaused(habit, date)) {
         date = date.subtract(const Duration(days: 1));
         continue;
       }
@@ -813,7 +816,7 @@ class _TodayScreenState extends State<TodayScreen> {
     int totalScheduledDays = 0;
     DateTime date = start;
     while (!date.isAfter(end)) {
-      if (_isPaused(date)) {
+      if (_isHabitPaused(habit, date)) {
         date = date.add(const Duration(days: 1));
         continue;
       }
@@ -831,6 +834,11 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   bool _isPaused(DateTime date) => isPausedOnDate(_pausePeriods, date);
+
+  bool _isHabitPaused(Habit habit, DateTime date) {
+    return isPausedOnDate(_pausePeriods, date) ||
+        isPausedOnDate(habit.pausePeriods, date);
+  }
 
   bool _isTodayPaused() => _isPaused(_normalizeDate(DateTime.now()));
 
@@ -2039,16 +2047,20 @@ class _TodayScreenState extends State<TodayScreen> {
         qualityTrendLabel(qualityTrend),
     ];
 
+    final isHabitPausedToday = isTodayPaused || isPausedOnDate(habit.pausePeriods, _normalizeDate(DateTime.now()));
+
     return GestureDetector(
       onTap: () {
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (context) => HabitDetailsScreen(habit: habit),
           ),
-        );
+        ).then((_) {
+          _loadHabits();
+        });
       },
       child: Opacity(
-        opacity: isTodayPaused ? 0.65 : (isCompleted ? 0.6 : 1),
+        opacity: isHabitPausedToday ? 0.65 : (isCompleted ? 0.6 : 1),
         child: Card(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Padding(
@@ -2139,10 +2151,12 @@ class _TodayScreenState extends State<TodayScreen> {
                           ),
                         ),
                       ],
-                      if (isTodayPaused) ...[
+                      if (isHabitPausedToday) ...[
                         const SizedBox(height: 8),
                         Text(
-                          'Tracking paused today',
+                          isPausedOnDate(habit.pausePeriods, _normalizeDate(DateTime.now()))
+                              ? 'Habit paused today'
+                              : 'Tracking paused today',
                           style: TextStyle(
                             fontSize: 12,
                             color: Theme.of(
@@ -2200,7 +2214,7 @@ class _TodayScreenState extends State<TodayScreen> {
                             ),
                             const SizedBox(width: 12),
                             TextButton(
-                              onPressed: isTodayPaused
+                              onPressed: isHabitPausedToday
                                   ? null
                                   : () => _startHabitTimer(habit),
                               child: const Text('Start Timer'),
@@ -2216,7 +2230,7 @@ class _TodayScreenState extends State<TodayScreen> {
                     padding: const EdgeInsets.only(top: 2),
                     child: Checkbox(
                       value: log.completed,
-                      onChanged: isTodayPaused
+                      onChanged: isHabitPausedToday
                           ? null
                           : (value) {
                               _toggleHabitCompletion(habit, value);
@@ -2231,14 +2245,14 @@ class _TodayScreenState extends State<TodayScreen> {
                       children: [
                         IconButton(
                           icon: const Icon(Icons.remove),
-                          onPressed: isTodayPaused
+                          onPressed: isHabitPausedToday
                               ? null
                               : () => _decrementHabitCount(habit),
                         ),
                         Text('${log.count ?? 0} / ${habit.timesPerDay ?? ''}'),
                         IconButton(
                           icon: const Icon(Icons.add),
-                          onPressed: isTodayPaused
+                          onPressed: isHabitPausedToday
                               ? null
                               : () => _incrementHabitCount(habit),
                         ),

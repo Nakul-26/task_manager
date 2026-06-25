@@ -92,6 +92,11 @@ class HistoryScreenState extends State<HistoryScreen> {
     return schedule_utils.normalizeDate(date);
   }
 
+  bool _isHabitPaused(Habit habit, DateTime date) {
+    return isPausedOnDate(_pausePeriods, date) ||
+        isPausedOnDate(habit.pausePeriods, date);
+  }
+
   bool _isSameDate(DateTime a, DateTime b) {
     return schedule_utils.isSameDate(a, b);
   }
@@ -118,7 +123,7 @@ class HistoryScreenState extends State<HistoryScreen> {
         : today;
     final shouldExcludeToday =
         _isSameDate(statsEnd, today) &&
-        !isPausedOnDate(_pausePeriods, today) &&
+        !_isHabitPaused(habit, today) &&
         schedule_utils.isScheduledDay(habit, today) &&
         !_isHabitCompletedOnDate(habit, today);
     final effectiveStatsEnd = shouldExcludeToday
@@ -139,7 +144,7 @@ class HistoryScreenState extends State<HistoryScreen> {
     final normalizedStart = _normalizeDate(habit.startDate);
     DateTime date = statsEnd;
     while (!date.isBefore(normalizedStart)) {
-      if (isPausedOnDate(_pausePeriods, date)) {
+      if (_isHabitPaused(habit, date)) {
         date = date.subtract(const Duration(days: 1));
         continue;
       }
@@ -167,7 +172,7 @@ class HistoryScreenState extends State<HistoryScreen> {
     int totalScheduledDays = 0;
     DateTime date = start;
     while (!date.isAfter(end)) {
-      if (isPausedOnDate(_pausePeriods, date)) {
+      if (_isHabitPaused(habit, date)) {
         date = date.add(const Duration(days: 1));
         continue;
       }

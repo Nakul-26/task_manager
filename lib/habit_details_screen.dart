@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/models.dart';
+import 'package:habit_tracker/reminder_service.dart';
 import 'package:habit_tracker/utils/habit_quality_utils.dart';
 import 'package:habit_tracker/utils/habit_schedule_utils.dart'
     as schedule_utils;
@@ -20,6 +21,7 @@ class HabitDetailsScreen extends StatefulWidget {
 class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
   late Box _dailyLogBox;
   late Box _settingsBox;
+  late Box _habitBox;
   Map<DateTime, List<DailyLog>> _completedEvents = {};
   Map<DateTime, List<PausePeriod>> _pausedEvents = {};
   List<PausePeriod> _pausePeriods = [];
@@ -42,11 +44,17 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
     super.initState();
     _dailyLogBox = Hive.box(HiveBoxNames.dailyLogs);
     _settingsBox = Hive.box(HiveBoxNames.appSettings);
+    _habitBox = Hive.box(HiveBoxNames.habits);
     _loadLogs();
   }
 
   DateTime _normalizeDate(DateTime date) {
     return schedule_utils.normalizeDate(date);
+  }
+
+  bool _isHabitPaused(DateTime date) {
+    return isPausedOnDate(_pausePeriods, date) ||
+        isPausedOnDate(widget.habit.pausePeriods, date);
   }
 
   DateTime _parseLogDate(String date) {
@@ -83,7 +91,7 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
     final isTodayCompleted = logByDate[todayKey]?.completed ?? false;
     final shouldExcludeToday =
         _isSameDate(statsEnd, today) &&
-        !isPausedOnDate(_pausePeriods, today) &&
+        !_isHabitPaused(today) &&
         schedule_utils.isScheduledDay(widget.habit, today) &&
         !isTodayCompleted;
     final effectiveStatsEnd = shouldExcludeToday
@@ -105,7 +113,7 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
     final startDate = normalizedEnd.subtract(Duration(days: days - 1));
     DateTime date = startDate;
     while (!date.isAfter(normalizedEnd)) {
-      if (isPausedOnDate(_pausePeriods, date) ||
+      if (_isHabitPaused(date) ||
           !schedule_utils.isScheduledDay(widget.habit, date)) {
         date = date.add(const Duration(days: 1));
         continue;
@@ -153,6 +161,14 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
         day = day.add(const Duration(days: 1));
       }
     }
+    for (final period in widget.habit.pausePeriods) {
+      DateTime day = _normalizeDate(period.startDate);
+      final normalizedEnd = _normalizeDate(period.endDate);
+      while (!day.isAfter(normalizedEnd)) {
+        _pausedEvents.putIfAbsent(day, () => []).add(period);
+        day = day.add(const Duration(days: 1));
+      }
+    }
     final statsEnd = _getStatsEndDate(logByDate);
     if (statsEnd == null) {
       _totalDays = 0;
@@ -174,7 +190,7 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
     _totalDays = 0;
     _completedDays = 0;
     while (!date.isAfter(statsEnd)) {
-      if (isPausedOnDate(_pausePeriods, date)) {
+      if (_isHabitPaused(date)) {
         date = date.add(const Duration(days: 1));
         continue;
       }
@@ -226,7 +242,7 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
     final start = _normalizeDate(widget.habit.startDate);
     DateTime date = _normalizeDate(effectiveToday);
     while (!date.isBefore(start)) {
-      if (isPausedOnDate(_pausePeriods, date)) {
+      if (_isHabitPaused(date)) {
         date = date.subtract(const Duration(days: 1));
         continue;
       }
@@ -255,7 +271,7 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
     DateTime date = _normalizeDate(widget.habit.startDate);
     final end = _normalizeDate(effectiveToday);
     while (!date.isAfter(end)) {
-      if (isPausedOnDate(_pausePeriods, date)) {
+      if (_isHabitPaused(date)) {
         date = date.add(const Duration(days: 1));
         continue;
       }
@@ -479,7 +495,7 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
               Container(
                 width: 10,
                 height: 10,
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   color: Colors.orange,
                   shape: BoxShape.circle,
                 ),
@@ -488,8 +504,278 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
               const Text('Paused day'),
             ],
           ),
+          const SizedBox(height: 20),
+          const Divider(),
+          const SizedBox(height: 10),
+          _buildPausePeriodsSection(),
         ],
       ),
+    );
+  }
+
+  String _formatHumanDate(BuildContext context, DateTime date) {
+    return MaterialLocalizations.of(
+      context,
+    ).formatMediumDate(_normalizeDate(date));
+  }
+
+  String _statusLabel(PausePeriod period) {
+    final today = _normalizeDate(DateTime.now());
+    if (!period.startDate.isAfter(today) && !period.endDate.isBefore(today)) {
+      return 'Active';
+    }
+    if (period.startDate.isAfter(today)) {
+      return 'Upcoming';
+    }
+    return 'Past';
+  }
+
+  MaterialColor _statusColor(String status) {
+    switch (status) {
+      case 'Active':
+        return Colors.orange;
+      case 'Upcoming':
+        return Colors.blue;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  Future<void> _openPauseDialog({PausePeriod? period, int? index}) async {
+    final today = _normalizeDate(DateTime.now());
+    DateTime startDate = period?.startDate ?? today;
+    DateTime endDate = period?.endDate ?? today;
+    final descriptionController = TextEditingController(
+      text: period?.description ?? '',
+    );
+
+    final savedPeriod = await showDialog<PausePeriod>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> pickStartDate() async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: startDate,
+                firstDate: DateTime(today.year - 5),
+                lastDate: DateTime(today.year + 5),
+              );
+              if (picked == null) {
+                return;
+              }
+              setDialogState(() {
+                startDate = _normalizeDate(picked);
+                if (endDate.isBefore(startDate)) {
+                  endDate = startDate;
+                }
+              });
+            }
+
+            Future<void> pickEndDate() async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: endDate.isBefore(startDate) ? startDate : endDate,
+                firstDate: startDate,
+                lastDate: DateTime(today.year + 5),
+              );
+              if (picked == null) {
+                return;
+              }
+              setDialogState(() {
+                endDate = _normalizeDate(picked);
+              });
+            }
+
+            return AlertDialog(
+              title: Text(period == null ? 'Add Pause' : 'Edit Pause'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Start date'),
+                      subtitle: Text(_formatHumanDate(context, startDate)),
+                      trailing: const Icon(Icons.calendar_today),
+                      onTap: pickStartDate,
+                    ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('End date'),
+                      subtitle: Text(_formatHumanDate(context, endDate)),
+                      trailing: const Icon(Icons.calendar_today),
+                      onTap: pickEndDate,
+                    ),
+                    TextField(
+                      controller: descriptionController,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Reason',
+                        hintText: 'Tests, travel, vacation, recovery...',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop(
+                      PausePeriod(
+                        startDate: startDate,
+                        endDate: endDate,
+                        description: descriptionController.text.trim(),
+                      ),
+                    );
+                  },
+                  child: const Text('Save'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    descriptionController.dispose();
+
+    if (savedPeriod == null) {
+      return;
+    }
+
+    final updatedPeriods = List<PausePeriod>.from(widget.habit.pausePeriods);
+    if (index == null) {
+      updatedPeriods.add(savedPeriod);
+    } else {
+      updatedPeriods[index] = savedPeriod;
+    }
+    updatedPeriods.sort((a, b) => a.startDate.compareTo(b.startDate));
+    setState(() {
+      widget.habit.pausePeriods = updatedPeriods;
+    });
+    await _habitBox.put(widget.habit.id, widget.habit.toMap());
+    // Trigger syncAllHabitReminders to reschedule reminders taking the new pause into account
+    await ReminderService.instance.syncHabitReminder(widget.habit);
+    _loadLogs();
+  }
+
+  Future<void> _deletePause(int index) async {
+    final period = widget.habit.pausePeriods[index];
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete Pause'),
+        content: Text(
+          'Delete the pause from ${_formatHumanDate(context, period.startDate)} '
+          'to ${_formatHumanDate(context, period.endDate)}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) {
+      return;
+    }
+
+    final updatedPeriods = List<PausePeriod>.from(widget.habit.pausePeriods)
+      ..removeAt(index);
+    setState(() {
+      widget.habit.pausePeriods = updatedPeriods;
+    });
+    await _habitBox.put(widget.habit.id, widget.habit.toMap());
+    await ReminderService.instance.syncHabitReminder(widget.habit);
+    _loadLogs();
+  }
+
+  Widget _buildPausePeriodsSection() {
+    final periods = widget.habit.pausePeriods;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Habit Pause Periods',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            IconButton(
+              icon: const Icon(Icons.add),
+              tooltip: 'Add Pause Period',
+              onPressed: () => _openPauseDialog(),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (periods.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Text(
+              'No paused periods for this habit.',
+              style: TextStyle(color: Colors.grey.shade600, fontStyle: FontStyle.italic),
+            ),
+          )
+        else
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: periods.length,
+            itemBuilder: (context, index) {
+              final period = periods[index];
+              final duration = period.endDate.difference(period.startDate).inDays + 1;
+              final status = _statusLabel(period);
+              final statusColor = _statusColor(status);
+              return Card(
+                margin: const EdgeInsets.symmetric(vertical: 4.0),
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
+                  title: Text(
+                    '${_formatHumanDate(context, period.startDate)} - ${_formatHumanDate(context, period.endDate)}',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('$duration ${duration == 1 ? 'day' : 'days'} ($status)'),
+                      if (period.description.trim().isNotEmpty)
+                        Text(
+                          period.description,
+                          style: const TextStyle(fontStyle: FontStyle.italic),
+                        ),
+                    ],
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit, size: 20),
+                        onPressed: () => _openPauseDialog(period: period, index: index),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, size: 20),
+                        onPressed: () => _deletePause(index),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+      ],
     );
   }
 }

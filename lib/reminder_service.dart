@@ -130,11 +130,12 @@ class ReminderService {
     final now = tz.TZDateTime.now(tz.local);
     final start = _startDateTimeAtReminder(habit);
     final earliestCandidate = start.isAfter(now) ? start : now;
-    final earliest = _firstAllowedDateTimeOnOrAfter(earliestCandidate);
+    final earliest = _firstAllowedDateTimeOnOrAfter(earliestCandidate, habit);
     final when = _nextTimeAtOrAfter(
       habit.reminderHour!,
       habit.reminderMinute!,
       earliest: earliest,
+      habit: habit,
     );
     await _notifications.zonedSchedule(
       _baseNotificationId(habit.id),
@@ -164,13 +165,14 @@ class ReminderService {
     final now = tz.TZDateTime.now(tz.local);
     final start = _startDateTimeAtReminder(habit);
     final earliestCandidate = start.isAfter(now) ? start : now;
-    final earliest = _firstAllowedDateTimeOnOrAfter(earliestCandidate);
+    final earliest = _firstAllowedDateTimeOnOrAfter(earliestCandidate, habit);
     for (final day in days) {
       final when = _nextWeekdayTime(
         day,
         habit.reminderHour!,
         habit.reminderMinute!,
         earliest: earliest,
+        habit: habit,
       );
       await _notifications.zonedSchedule(
         baseId + day,
@@ -213,7 +215,7 @@ class ReminderService {
           habit.reminderMinute!,
         );
         if (localDateTime.isAfter(now) &&
-            !_isPausedOnDate(DateTime(day.year, day.month, day.day))) {
+            !_isPausedOnDate(habit, DateTime(day.year, day.month, day.day))) {
           final when = tz.TZDateTime.from(localDateTime, tz.local);
           await _notifications.zonedSchedule(
             baseId + slot,
@@ -247,6 +249,7 @@ class ReminderService {
     int hour,
     int minute, {
     required tz.TZDateTime earliest,
+    required Habit habit,
   }) {
     var scheduled = tz.TZDateTime(
       tz.local,
@@ -259,7 +262,7 @@ class ReminderService {
     if (!scheduled.isAfter(earliest)) {
       scheduled = scheduled.add(const Duration(days: 1));
     }
-    while (_isPausedOnDate(scheduled)) {
+    while (_isPausedOnDate(habit, scheduled)) {
       scheduled = scheduled.add(const Duration(days: 1));
       scheduled = tz.TZDateTime(
         tz.local,
@@ -278,6 +281,7 @@ class ReminderService {
     int hour,
     int minute, {
     required tz.TZDateTime earliest,
+    required Habit habit,
   }) {
     var scheduled = tz.TZDateTime(
       tz.local,
@@ -290,7 +294,7 @@ class ReminderService {
     while (scheduled.weekday != weekday || !scheduled.isAfter(earliest)) {
       scheduled = scheduled.add(const Duration(days: 1));
     }
-    while (_isPausedOnDate(scheduled)) {
+    while (_isPausedOnDate(habit, scheduled)) {
       scheduled = scheduled.add(const Duration(days: 1));
       while (scheduled.weekday != weekday) {
         scheduled = scheduled.add(const Duration(days: 1));
@@ -307,13 +311,14 @@ class ReminderService {
     return scheduled;
   }
 
-  bool _isPausedOnDate(DateTime date) {
+  bool _isPausedOnDate(Habit habit, DateTime date) {
     final settingsBox = Hive.box<dynamic>(HiveBoxNames.appSettings);
     final pausePeriods = loadPausePeriods(settingsBox);
-    return isPausedOnDate(pausePeriods, date);
+    return isPausedOnDate(pausePeriods, date) ||
+        isPausedOnDate(habit.pausePeriods, date);
   }
 
-  tz.TZDateTime _firstAllowedDateTimeOnOrAfter(tz.TZDateTime dateTime) {
+  tz.TZDateTime _firstAllowedDateTimeOnOrAfter(tz.TZDateTime dateTime, Habit habit) {
     var candidate = tz.TZDateTime(
       tz.local,
       dateTime.year,
@@ -322,7 +327,7 @@ class ReminderService {
       dateTime.hour,
       dateTime.minute,
     );
-    while (_isPausedOnDate(schedule_utils.normalizeDate(candidate))) {
+    while (_isPausedOnDate(habit, schedule_utils.normalizeDate(candidate))) {
       final nextDay = candidate.add(const Duration(days: 1));
       candidate = tz.TZDateTime(
         tz.local,
