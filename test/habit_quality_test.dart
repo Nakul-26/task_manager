@@ -68,19 +68,41 @@ void main() {
       expect(averageQuality(logs), 4.0);
     });
 
-    test('reproduce build more data with 8 days of data', () {
-      // endDate is today (Day 8)
-      // recentLogs range [Day 2, Day 8]
-      // previousLogs range [Day -5, Day 1]
-      final recentLogs = [
-        DailyLog(date: 'Day 8', habitId: '1', completed: true, quality: 4),
-      ];
-      final previousLogs = [
-        DailyLog(date: 'Day 1', habitId: '1', completed: true, quality: 3),
-      ];
+    test('qualityScoreLabel and qualityScoreStars return correct values', () {
+      expect(qualityScoreLabel(1.2), 'Poor');
+      expect(qualityScoreStars(1.2), '⭐☆☆☆');
 
+      expect(qualityScoreLabel(2.0), 'Average');
+      expect(qualityScoreStars(2.0), '⭐⭐☆☆');
+
+      expect(qualityScoreLabel(3.2), 'Good');
+      expect(qualityScoreStars(3.2), '⭐⭐⭐☆');
+
+      expect(qualityScoreLabel(3.8), 'Excellent');
+      expect(qualityScoreStars(3.8), '⭐⭐⭐⭐');
+    });
+
+    test('calculateQualityTrendFromRatedLogs returns stable for consistent Poor ratings', () {
+      final logs = [
+        DailyLog(date: '2026-04-01', habitId: '1', completed: true, quality: 1),
+        DailyLog(date: '2026-04-02', habitId: '1', completed: true, quality: 1),
+        DailyLog(date: '2026-04-03', habitId: '1', completed: true, quality: 1),
+      ];
       expect(
-        calculateQualityTrend(recentLogs: recentLogs, previousLogs: previousLogs),
+        calculateQualityTrendFromRatedLogs(logs),
+        HabitQualityTrend.stable,
+      );
+    });
+
+    test('calculateQualityTrendFromRatedLogs detects improvement above threshold', () {
+      final logs = [
+        DailyLog(date: '2026-04-01', habitId: '1', completed: true, quality: 1),
+        DailyLog(date: '2026-04-02', habitId: '1', completed: true, quality: 2),
+        DailyLog(date: '2026-04-03', habitId: '1', completed: true, quality: 3),
+        DailyLog(date: '2026-04-04', habitId: '1', completed: true, quality: 4),
+      ];
+      expect(
+        calculateQualityTrendFromRatedLogs(logs),
         HabitQualityTrend.improving,
       );
     });

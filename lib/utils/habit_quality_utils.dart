@@ -18,6 +18,38 @@ String qualityLabel(int quality) {
   }
 }
 
+String qualityScoreLabel(double? score) {
+  if (score == null) {
+    return 'Unrated';
+  }
+  if (score < 1.5) {
+    return 'Poor';
+  }
+  if (score < 2.5) {
+    return 'Average';
+  }
+  if (score < 3.5) {
+    return 'Good';
+  }
+  return 'Excellent';
+}
+
+String qualityScoreStars(double? score) {
+  if (score == null) {
+    return '☆☆☆☆';
+  }
+  if (score < 1.5) {
+    return '⭐☆☆☆';
+  }
+  if (score < 2.5) {
+    return '⭐⭐☆☆';
+  }
+  if (score < 3.5) {
+    return '⭐⭐⭐☆';
+  }
+  return '⭐⭐⭐⭐';
+}
+
 String qualityTrendLabel(HabitQualityTrend trend) {
   switch (trend) {
     case HabitQualityTrend.improving:
@@ -59,7 +91,7 @@ double? averageQuality(Iterable<DailyLog> logs) {
 HabitQualityTrend calculateQualityTrend({
   required List<DailyLog> recentLogs,
   required List<DailyLog> previousLogs,
-  double threshold = 0.1,
+  double threshold = 0.3,
 }) {
   final recentAverage = averageQuality(recentLogs);
   final previousAverage = averageQuality(previousLogs);
@@ -75,3 +107,39 @@ HabitQualityTrend calculateQualityTrend({
   }
   return HabitQualityTrend.stable;
 }
+
+HabitQualityTrend calculateQualityTrendFromRatedLogs(
+  Iterable<DailyLog> logs, {
+  double threshold = 0.3,
+  int windowSize = 7,
+}) {
+  final ratedLogs = logs
+      .where((log) => log.completed && log.quality != null && log.quality! > 0)
+      .toList();
+  if (ratedLogs.length < 2) {
+    return HabitQualityTrend.insufficientData;
+  }
+
+  // Take recent window and previous window from chronological logs
+  final total = ratedLogs.length;
+  final recentCount = total > windowSize ? windowSize : (total ~/ 2);
+  if (recentCount == 0) {
+    return HabitQualityTrend.insufficientData;
+  }
+  final recentLogs = ratedLogs.sublist(total - recentCount);
+  final remainingLogs = ratedLogs.sublist(0, total - recentCount);
+  final previousCount = remainingLogs.length > windowSize
+      ? windowSize
+      : remainingLogs.length;
+  if (previousCount == 0) {
+    return HabitQualityTrend.insufficientData;
+  }
+  final previousLogs = remainingLogs.sublist(remainingLogs.length - previousCount);
+
+  return calculateQualityTrend(
+    recentLogs: recentLogs,
+    previousLogs: previousLogs,
+    threshold: threshold,
+  );
+}
+

@@ -187,6 +187,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
     _name = _nameController.text.trim();
     _description = _descriptionController.text.trim();
     if (_formKey.currentState!.validate()) {
+    _formKey.currentState!.save();
       if (_frequency == Frequency.weekly && _daysOfWeek.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -413,6 +414,49 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
     );
   }
 
+  Widget _buildSectionCard({
+    required String title,
+    required IconData icon,
+    required List<Widget> children,
+  }) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  icon,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            const Divider(height: 1),
+            const SizedBox(height: 12),
+            for (int i = 0; i < children.length; i++) ...[
+              children[i],
+              if (i != children.length - 1) const SizedBox(height: 12),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -433,312 +477,399 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
-                TextFormField(
-                  controller: _nameController,
-                  decoration: const InputDecoration(labelText: 'Name'),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Please enter a name';
-                    }
-                    return null;
-                  },
-                ),
-                TextFormField(
-                  controller: _descriptionController,
-                  decoration: const InputDecoration(labelText: 'Description'),
-                ),
-                DropdownButtonFormField<PriorityLevel>(
-                  initialValue: _priorityLevel,
-                  decoration: const InputDecoration(
-                    labelText: 'Priority Level',
-                    helperText:
-                        'Strategic importance. This stays visible even if the context changes.',
-                  ),
-                  items: PriorityLevel.values.map((level) {
-                    return DropdownMenuItem(
-                      value: level,
-                      child: Text(
-                        'Level ${level.levelNumber} · ${level.displayName}',
+                _buildSectionCard(
+                  title: 'Basics',
+                  icon: Icons.edit_note,
+                  children: [
+                    TextFormField(
+                      controller: _nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Name',
+                        border: OutlineInputBorder(),
                       ),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    if (value == null) {
-                      return;
-                    }
-                    setState(() {
-                      _priorityLevel = value;
-                    });
-                  },
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Please enter a name';
+                        }
+                        return null;
+                      },
+                    ),
+                    TextFormField(
+                      controller: _descriptionController,
+                      decoration: const InputDecoration(
+                        labelText: 'Description',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Color',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        GestureDetector(
+                          onTap: _openColorPicker,
+                          child: Container(
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: _color,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Center(
+                              child: Text(
+                                'Tap to pick a color',
+                                style: TextStyle(color: Colors.white),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                DropdownButtonFormField<String>(
-                  initialValue: _environmentId,
-                  decoration: const InputDecoration(
-                    labelText: 'Execution Environment',
-                    helperText:
-                        'Where this habit is realistically executable.',
-                  ),
-                  items: _environments.map((environment) {
-                    return DropdownMenuItem(
-                      value: environment.id,
-                      child: Row(
+                _buildSectionCard(
+                  title: 'Priority & Context',
+                  icon: Icons.flag_outlined,
+                  children: [
+                    DropdownButtonFormField<PriorityLevel>(
+                      initialValue: _priorityLevel,
+                      decoration: const InputDecoration(
+                        labelText: 'Priority Level',
+                        border: OutlineInputBorder(),
+                        helperText:
+                            'Strategic importance. This stays visible even if the context changes.',
+                      ),
+                      items: PriorityLevel.values.map((level) {
+                        return DropdownMenuItem(
+                          value: level,
+                          child: Text(
+                            'Level ${level.levelNumber} · ${level.displayName}',
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        if (value == null) {
+                          return;
+                        }
+                        setState(() {
+                          _priorityLevel = value;
+                        });
+                      },
+                    ),
+                    DropdownButtonFormField<String>(
+                      initialValue: _environmentId,
+                      decoration: const InputDecoration(
+                        labelText: 'Execution Environment',
+                        border: OutlineInputBorder(),
+                        helperText:
+                            'Where this habit is realistically executable.',
+                      ),
+                      items: _environments.map((environment) {
+                        return DropdownMenuItem(
+                          value: environment.id,
+                          child: Row(
+                            children: [
+                              Icon(
+                                environment.icon,
+                                size: 18,
+                                color: environment.color,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(environment.name),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        if (value == null) {
+                          return;
+                        }
+                        setState(() {
+                          _environmentId = value;
+                        });
+                      },
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: _openEnvironmentManager,
+                        icon: const Icon(Icons.tune),
+                        label: const Text('Manage environments'),
+                      ),
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Important'),
+                      value: _isImportant,
+                      onChanged: (value) {
+                        setState(() {
+                          _isImportant = value;
+                          if (!value && _importanceScore > 0) {
+                            _importanceScore = 0;
+                          }
+                          if (value && _importanceScore == 0) {
+                            _importanceScore = 1;
+                          }
+                        });
+                      },
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Importance Score: $_importanceScore / 5'),
+                        Slider(
+                          value: _importanceScore.toDouble(),
+                          min: 0,
+                          max: 5,
+                          divisions: 5,
+                          label: _importanceScore.toString(),
+                          onChanged: (value) {
+                            setState(() {
+                              _importanceScore = value.round();
+                              _isImportant = _importanceScore > 0;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                _buildSectionCard(
+                  title: 'Schedule',
+                  icon: Icons.event_repeat,
+                  children: [
+                    DropdownButtonFormField<HabitType>(
+                      initialValue: _type,
+                      decoration: const InputDecoration(
+                        labelText: 'Type',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: HabitType.values.map((type) {
+                        return DropdownMenuItem(
+                          value: type,
+                          child: Text(type.toString().split('.').last),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _type = value!;
+                        });
+                      },
+                    ),
+                    if (_type == HabitType.counted)
+                      TextFormField(
+                        initialValue: _timesPerDay?.toString(),
+                        decoration: const InputDecoration(
+                          labelText: 'Times per Day',
+                          border: OutlineInputBorder(),
+                        ),
+                        keyboardType: TextInputType.number,
+                        validator: (value) {
+                          if (value != null &&
+                              value.isNotEmpty &&
+                              int.tryParse(value) == null) {
+                            return 'Please enter a valid number';
+                          }
+                          return null;
+                        },
+                        onSaved: (value) =>
+                            _timesPerDay = value != null && value.isNotEmpty
+                            ? int.parse(value)
+                            : null,
+                      ),
+                    DropdownButtonFormField<Frequency>(
+                      initialValue: _frequency,
+                      decoration: const InputDecoration(
+                        labelText: 'Frequency',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: Frequency.values.map((frequency) {
+                        return DropdownMenuItem(
+                          value: frequency,
+                          child: Text(_frequencyLabel(frequency)),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _frequency = value!;
+                        });
+                      },
+                    ),
+                    if (_frequency == Frequency.weekly)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(environment.icon, size: 18, color: environment.color),
-                          const SizedBox(width: 8),
-                          Text(environment.name),
+                          const Text('Days of the Week'),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8.0,
+                            children: List<Widget>.generate(7, (int index) {
+                              return FilterChip(
+                                label: Text(
+                                  ['M', 'T', 'W', 'T', 'F', 'S', 'S'][index],
+                                ),
+                                selected: _daysOfWeek.contains(index + 1),
+                                onSelected: (bool selected) {
+                                  setState(() {
+                                    if (selected) {
+                                      _daysOfWeek.add(index + 1);
+                                    } else {
+                                      _daysOfWeek.remove(index + 1);
+                                    }
+                                  });
+                                },
+                              );
+                            }).toList(),
+                          ),
                         ],
                       ),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    if (value == null) {
-                      return;
-                    }
-                    setState(() {
-                      _environmentId = value;
-                    });
-                  },
-                ),
-                TextButton.icon(
-                  onPressed: _openEnvironmentManager,
-                  icon: const Icon(Icons.tune),
-                  label: const Text('Manage environments'),
-                ),
-                SwitchListTile(
-                  title: const Text('Important'),
-                  value: _isImportant,
-                  onChanged: (value) {
-                    setState(() {
-                      _isImportant = value;
-                      if (!value && _importanceScore > 0) {
-                        _importanceScore = 0;
-                      }
-                      if (value && _importanceScore == 0) {
-                        _importanceScore = 1;
-                      }
-                    });
-                  },
-                ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Importance Score'),
-                  subtitle: Text('$_importanceScore / 5'),
-                ),
-                Slider(
-                  value: _importanceScore.toDouble(),
-                  min: 0,
-                  max: 5,
-                  divisions: 5,
-                  label: _importanceScore.toString(),
-                  onChanged: (value) {
-                    setState(() {
-                      _importanceScore = value.round();
-                      _isImportant = _importanceScore > 0;
-                    });
-                  },
-                ),
-                DropdownButtonFormField<HabitType>(
-                  initialValue: _type,
-                  decoration: const InputDecoration(labelText: 'Type'),
-                  items: HabitType.values.map((type) {
-                    return DropdownMenuItem(
-                      value: type,
-                      child: Text(type.toString().split('.').last),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      _type = value!;
-                    });
-                  },
-                ),
-                if (_type == HabitType.counted)
-                  TextFormField(
-                    initialValue: _timesPerDay?.toString(),
-                    decoration: const InputDecoration(
-                      labelText: 'Times per Day',
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Start date'),
+                      subtitle: Text(_formatDate(_startDate)),
+                      trailing: const Icon(Icons.calendar_today),
+                      onTap: _pickStartDate,
                     ),
-                    keyboardType: TextInputType.number,
-                    validator: (value) {
-                      if (value != null &&
-                          value.isNotEmpty &&
-                          int.tryParse(value) == null) {
-                        return 'Please enter a valid number';
-                      }
-                      return null;
-                    },
-                    onSaved: (value) =>
-                        _timesPerDay = value != null && value.isNotEmpty
-                        ? int.parse(value)
-                        : null,
-                  ),
-                DropdownButtonFormField<Frequency>(
-                  initialValue: _frequency,
-                  decoration: const InputDecoration(labelText: 'Frequency'),
-                  items: Frequency.values.map((frequency) {
-                    return DropdownMenuItem(
-                      value: frequency,
-                      child: Text(_frequencyLabel(frequency)),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      _frequency = value!;
-                    });
-                  },
-                ),
-                if (_frequency == Frequency.weekly) ...[
-                  const SizedBox(height: 16),
-                  const Text('Days of the Week'),
-                  Wrap(
-                    spacing: 8.0,
-                    children: List<Widget>.generate(7, (int index) {
-                      return FilterChip(
-                        label: Text(['M', 'T', 'W', 'T', 'F', 'S', 'S'][index]),
-                        selected: _daysOfWeek.contains(index + 1),
-                        onSelected: (bool selected) {
-                          setState(() {
-                            if (selected) {
-                              _daysOfWeek.add(index + 1);
-                            } else {
-                              _daysOfWeek.remove(index + 1);
-                            }
-                          });
-                        },
-                      );
-                    }).toList(),
-                  ),
-                ],
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Start date'),
-                  subtitle: Text(_formatDate(_startDate)),
-                  trailing: const Icon(Icons.calendar_today),
-                  onTap: _pickStartDate,
-                ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('End date'),
-                  subtitle: Text(
-                    _endDate == null ? 'No end date' : _formatDate(_endDate!),
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_endDate != null)
-                        IconButton(
-                          tooltip: 'Clear end date',
-                          icon: const Icon(Icons.clear),
-                          onPressed: _clearEndDate,
-                        ),
-                      const Icon(Icons.calendar_today),
-                    ],
-                  ),
-                  onTap: _pickEndDate,
-                ),
-                const SizedBox(height: 16),
-                SwitchListTile(
-                  title: const Text('Reminder'),
-                  subtitle: Text(
-                    _reminderEnabled
-                        ? (_reminderTime == null
-                              ? 'Select reminder time'
-                              : 'At ${_reminderTime!.format(context)}')
-                        : 'Off',
-                  ),
-                  value: _reminderEnabled,
-                  onChanged: (value) {
-                    setState(() {
-                      _reminderEnabled = value;
-                    });
-                  },
-                ),
-                if (_reminderEnabled)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Reminder time'),
-                    subtitle: Text(_reminderTime?.format(context) ?? 'Not set'),
-                    trailing: const Icon(Icons.schedule),
-                    onTap: _pickReminderTime,
-                  ),
-                const SizedBox(height: 16),
-                SwitchListTile(
-                  title: const Text('Time-based visibility'),
-                  subtitle: Text(
-                    _useTimeVisibility
-                        ? (_visibleAfterTime == null
-                              ? 'Choose when this habit should appear'
-                              : 'Show only after ${_visibleAfterTime!.format(context)}')
-                        : 'Always show this habit',
-                  ),
-                  value: _useTimeVisibility,
-                  onChanged: (value) {
-                    setState(() {
-                      _useTimeVisibility = value;
-                      if (!value) {
-                        _visibleAfterTime = null;
-                      }
-                    });
-                  },
-                ),
-                if (_useTimeVisibility)
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Visible after'),
-                    subtitle: Text(
-                      _visibleAfterTime?.format(context) ?? 'Not set',
-                    ),
-                    trailing: const Icon(Icons.schedule),
-                    onTap: _pickVisibleAfterTime,
-                  ),
-                TextFormField(
-                  initialValue: _timerMinutes?.toString() ?? '',
-                  decoration: const InputDecoration(
-                    labelText: 'Timer (minutes, optional)',
-                    helperText:
-                        'Set once for this habit to reuse every day without re-entering.',
-                  ),
-                  keyboardType: TextInputType.number,
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return null;
-                    }
-                    final parsed = int.tryParse(value.trim());
-                    if (parsed == null || parsed <= 0) {
-                      return 'Please enter a number greater than 0';
-                    }
-                    return null;
-                  },
-                  onSaved: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      _timerMinutes = null;
-                      return;
-                    }
-                    _timerMinutes = int.tryParse(value.trim());
-                  },
-                ),
-                const SizedBox(height: 16),
-                GestureDetector(
-                  onTap: _openColorPicker,
-                  child: Container(
-                    height: 50,
-                    decoration: BoxDecoration(
-                      color: _color,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'Pick a color',
-                        style: TextStyle(color: Colors.white),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('End date'),
+                      subtitle: Text(
+                        _endDate == null
+                            ? 'No end date'
+                            : _formatDate(_endDate!),
                       ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_endDate != null)
+                            IconButton(
+                              tooltip: 'Clear end date',
+                              icon: const Icon(Icons.clear),
+                              onPressed: _clearEndDate,
+                            ),
+                          const Icon(Icons.calendar_today),
+                        ],
+                      ),
+                      onTap: _pickEndDate,
                     ),
+                  ],
+                ),
+                _buildSectionCard(
+                  title: 'Reminders & Extras',
+                  icon: Icons.notifications_active_outlined,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Reminder'),
+                          subtitle: Text(
+                            _reminderEnabled
+                                ? (_reminderTime == null
+                                      ? 'Select reminder time'
+                                      : 'At ${_reminderTime!.format(context)}')
+                                : 'Off',
+                          ),
+                          value: _reminderEnabled,
+                          onChanged: (value) {
+                            setState(() {
+                              _reminderEnabled = value;
+                            });
+                          },
+                        ),
+                        if (_reminderEnabled)
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('Reminder time'),
+                            subtitle: Text(
+                              _reminderTime?.format(context) ?? 'Not set',
+                            ),
+                            trailing: const Icon(Icons.schedule),
+                            onTap: _pickReminderTime,
+                          ),
+                      ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Time-based visibility'),
+                          subtitle: Text(
+                            _useTimeVisibility
+                                ? (_visibleAfterTime == null
+                                      ? 'Choose when this habit should appear'
+                                      : 'Show only after ${_visibleAfterTime!.format(context)}')
+                                : 'Always show this habit',
+                          ),
+                          value: _useTimeVisibility,
+                          onChanged: (value) {
+                            setState(() {
+                              _useTimeVisibility = value;
+                              if (!value) {
+                                _visibleAfterTime = null;
+                              }
+                            });
+                          },
+                        ),
+                        if (_useTimeVisibility)
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('Visible after'),
+                            subtitle: Text(
+                              _visibleAfterTime?.format(context) ?? 'Not set',
+                            ),
+                            trailing: const Icon(Icons.schedule),
+                            onTap: _pickVisibleAfterTime,
+                          ),
+                      ],
+                    ),
+                    TextFormField(
+                      initialValue: _timerMinutes?.toString() ?? '',
+                      decoration: const InputDecoration(
+                        labelText: 'Time required (minutes, optional)',
+                        border: OutlineInputBorder(),
+                        helperText:
+                            'How long this habit takes per day. Powers the habit timer '
+                            'and the Weekly Time Budget page.',
+                      ),
+                      keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return null;
+                        }
+                        final parsed = int.tryParse(value.trim());
+                        if (parsed == null || parsed <= 0) {
+                          return 'Please enter a number greater than 0';
+                        }
+                        return null;
+                      },
+                      onSaved: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          _timerMinutes = null;
+                          return;
+                        }
+                        _timerMinutes = int.tryParse(value.trim());
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                FilledButton.icon(
+                  onPressed: _saveHabit,
+                  icon: const Icon(Icons.check),
+                  label: const Text('Save'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                 ),
-                const SizedBox(height: 20),
-                ElevatedButton(
-                  onPressed: _saveHabit,
-                  child: const Text('Save'),
-                ),
+                const SizedBox(height: 16),
               ],
             ),
           ),

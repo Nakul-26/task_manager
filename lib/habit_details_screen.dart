@@ -217,10 +217,7 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
     );
     _recentAverageQuality = averageQuality(recentLogs);
     _previousAverageQuality = averageQuality(previousLogs);
-    _qualityTrend = calculateQualityTrend(
-      recentLogs: recentLogs,
-      previousLogs: previousLogs,
-    );
+    _qualityTrend = calculateQualityTrendFromRatedLogs(completedLogs);
     final ratedLogs = completedLogs
         .where((log) => log.quality != null)
         .toList();
@@ -345,8 +342,8 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
           const SizedBox(height: 12),
           Text(
             _averageQuality == null
-                ? 'Average Quality: Unrated'
-                : 'Average Quality: ${_averageQuality!.toStringAsFixed(1)} / 4',
+                ? 'Quality Score: Unrated'
+                : 'Quality Score: ${qualityScoreStars(_averageQuality)} ${qualityScoreLabel(_averageQuality)} (${_averageQuality!.toStringAsFixed(1)} / 4)',
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
