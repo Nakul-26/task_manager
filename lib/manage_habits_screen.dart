@@ -8,6 +8,7 @@ import 'package:habit_tracker/archived_habits_screen.dart';
 import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/reminder_service.dart';
+import 'package:habit_tracker/utils/debounced_callback.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -22,6 +23,7 @@ class ManageHabitsScreen extends StatefulWidget {
 class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
   late Box<dynamic> _habitBox;
   late ValueListenable<Box<dynamic>> _habitListenable;
+  late VoidCallback _debouncedLoadHabits;
   List<Habit> _activeHabits = [];
   String _searchQuery = '';
 
@@ -34,13 +36,17 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
     // below — otherwise removeListener silently targets an empty wrapper
     // and never actually detaches the original listener.
     _habitListenable = _habitBox.listenable();
+    // A bulk write (e.g. persisting a reorder) fires one Hive change event
+    // per key. Debounce so a burst of events collapses into a single
+    // reload instead of one full rebuild per key.
+    _debouncedLoadHabits = debounceMicrotask(_loadHabits);
     _loadHabits();
-    _habitListenable.addListener(_loadHabits);
+    _habitListenable.addListener(_debouncedLoadHabits);
   }
 
   @override
   void dispose() {
-    _habitListenable.removeListener(_loadHabits);
+    _habitListenable.removeListener(_debouncedLoadHabits);
     super.dispose();
   }
 
@@ -75,37 +81,48 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
   // still in the middle of a bulk write, causing crashes/hangs. Silence
   // the listener for the duration of any multi-put operation.
   void _withoutBoxListener(void Function() action) {
-    _habitListenable.removeListener(_loadHabits);
+    _habitListenable.removeListener(_debouncedLoadHabits);
     try {
       action();
     } finally {
-      _habitListenable.addListener(_loadHabits);
+      _habitListenable.addListener(_debouncedLoadHabits);
     }
   }
 
   void _ensureSortOrder(List<Habit> habits) {
-    bool needsSave = false;
+    final changedHabits = <String, dynamic>{};
     for (int i = 0; i < habits.length; i++) {
       if (habits[i].sortOrder < 0) {
         habits[i].sortOrder = i;
-        needsSave = true;
+        changedHabits[habits[i].id] = habits[i].toMap();
       }
     }
-    if (needsSave) {
+    if (changedHabits.isNotEmpty) {
       _withoutBoxListener(() {
-        for (final habit in habits) {
-          _habitBox.put(habit.id, habit.toMap());
-        }
+        _habitBox.putAll(changedHabits);
       });
     }
   }
 
+  // Moving one habit only ever changes the sortOrder of the habits between
+  // its old and new position, not the whole list. Writing all of them on
+  // every move (as before) meant a single drag on a 67-habit list appended
+  // 67 frames to the Hive file every time, which is what made every reorder
+  // hang. Only write the habits whose sortOrder actually changed, and do it
+  // as one batched putAll instead of N separate put calls.
   void _persistOrder() {
-    _withoutBoxListener(() {
-      for (int i = 0; i < _activeHabits.length; i++) {
+    final changedHabits = <String, dynamic>{};
+    for (int i = 0; i < _activeHabits.length; i++) {
+      if (_activeHabits[i].sortOrder != i) {
         _activeHabits[i].sortOrder = i;
-        _habitBox.put(_activeHabits[i].id, _activeHabits[i].toMap());
+        changedHabits[_activeHabits[i].id] = _activeHabits[i].toMap();
       }
+    }
+    if (changedHabits.isEmpty) {
+      return;
+    }
+    _withoutBoxListener(() {
+      _habitBox.putAll(changedHabits);
     });
   }
 

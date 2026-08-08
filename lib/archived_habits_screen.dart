@@ -4,6 +4,7 @@ import 'package:habit_tracker/add_edit_habit_screen.dart';
 import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/reminder_service.dart';
+import 'package:habit_tracker/utils/debounced_callback.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 class ArchivedHabitsScreen extends StatefulWidget {
@@ -16,6 +17,7 @@ class ArchivedHabitsScreen extends StatefulWidget {
 class _ArchivedHabitsScreenState extends State<ArchivedHabitsScreen> {
   late Box<dynamic> _habitBox;
   late ValueListenable<Box<dynamic>> _habitListenable;
+  late VoidCallback _debouncedLoadArchivedHabits;
   List<Habit> _archivedHabits = [];
 
   @override
@@ -23,13 +25,17 @@ class _ArchivedHabitsScreenState extends State<ArchivedHabitsScreen> {
     super.initState();
     _habitBox = Hive.box(HiveBoxNames.habits);
     _habitListenable = _habitBox.listenable();
+    // A bulk write elsewhere (e.g. reordering habits) fires one Hive
+    // change event per key. Debounce so a burst of events collapses into a
+    // single reload instead of one full rebuild per key.
+    _debouncedLoadArchivedHabits = debounceMicrotask(_loadArchivedHabits);
     _loadArchivedHabits();
-    _habitListenable.addListener(_loadArchivedHabits);
+    _habitListenable.addListener(_debouncedLoadArchivedHabits);
   }
 
   @override
   void dispose() {
-    _habitListenable.removeListener(_loadArchivedHabits);
+    _habitListenable.removeListener(_debouncedLoadArchivedHabits);
     super.dispose();
   }
 

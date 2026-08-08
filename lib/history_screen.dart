@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/habit_details_screen.dart';
 import 'package:habit_tracker/models.dart';
+import 'package:habit_tracker/utils/debounced_callback.dart';
 import 'package:habit_tracker/utils/habit_schedule_utils.dart'
     as schedule_utils;
 import 'package:habit_tracker/utils/pause_utils.dart';
@@ -22,6 +23,8 @@ class HistoryScreenState extends State<HistoryScreen> {
   late ValueListenable<Box> _habitListenable;
   late ValueListenable<Box> _settingsListenable;
   late ValueListenable<Box> _dailyLogListenable;
+  late VoidCallback _debouncedLoadHabits;
+  late VoidCallback _debouncedLoadPausePeriods;
   List<Habit> _habits = [];
   List<PausePeriod> _pausePeriods = [];
 
@@ -38,18 +41,23 @@ class HistoryScreenState extends State<HistoryScreen> {
     _habitListenable = _habitBox.listenable();
     _settingsListenable = _settingsBox.listenable();
     _dailyLogListenable = _dailyLogBox.listenable();
+    // A bulk write elsewhere (e.g. reordering habits) fires one Hive
+    // change event per key. Debounce so a burst of events collapses into a
+    // single reload instead of one full rebuild per key.
+    _debouncedLoadHabits = debounceMicrotask(_loadHabits);
+    _debouncedLoadPausePeriods = debounceMicrotask(_loadPausePeriods);
     _loadHabits();
-    _habitListenable.addListener(_loadHabits);
-    _settingsListenable.addListener(_loadPausePeriods);
-    _dailyLogListenable.addListener(_loadHabits);
+    _habitListenable.addListener(_debouncedLoadHabits);
+    _settingsListenable.addListener(_debouncedLoadPausePeriods);
+    _dailyLogListenable.addListener(_debouncedLoadHabits);
     _loadPausePeriods();
   }
 
   @override
   void dispose() {
-    _habitListenable.removeListener(_loadHabits);
-    _settingsListenable.removeListener(_loadPausePeriods);
-    _dailyLogListenable.removeListener(_loadHabits);
+    _habitListenable.removeListener(_debouncedLoadHabits);
+    _settingsListenable.removeListener(_debouncedLoadPausePeriods);
+    _dailyLogListenable.removeListener(_debouncedLoadHabits);
     super.dispose();
   }
 

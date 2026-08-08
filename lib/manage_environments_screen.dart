@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/models.dart';
+import 'package:habit_tracker/utils/debounced_callback.dart';
 import 'package:habit_tracker/utils/execution_environment_utils.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
@@ -32,6 +33,7 @@ class ManageEnvironmentsScreen extends StatefulWidget {
 class _ManageEnvironmentsScreenState extends State<ManageEnvironmentsScreen> {
   late Box<dynamic> _settingsBox;
   late ValueListenable<Box<dynamic>> _settingsListenable;
+  late VoidCallback _debouncedLoadEnvironments;
   List<ExecutionEnvironment> _environments = [];
 
   @override
@@ -39,13 +41,17 @@ class _ManageEnvironmentsScreenState extends State<ManageEnvironmentsScreen> {
     super.initState();
     _settingsBox = Hive.box(HiveBoxNames.appSettings);
     _settingsListenable = _settingsBox.listenable();
+    // A bulk write elsewhere fires one Hive change event per key. Debounce
+    // so a burst of events collapses into a single reload instead of one
+    // full rebuild per key.
+    _debouncedLoadEnvironments = debounceMicrotask(_loadEnvironments);
     _loadEnvironments();
-    _settingsListenable.addListener(_loadEnvironments);
+    _settingsListenable.addListener(_debouncedLoadEnvironments);
   }
 
   @override
   void dispose() {
-    _settingsListenable.removeListener(_loadEnvironments);
+    _settingsListenable.removeListener(_debouncedLoadEnvironments);
     super.dispose();
   }
 

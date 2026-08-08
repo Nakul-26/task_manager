@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:habit_tracker/box_names.dart';
+import 'package:habit_tracker/utils/debounced_callback.dart';
 import 'package:habit_tracker/history_screen.dart';
 import 'package:habit_tracker/habit_details_screen.dart';
 import 'package:habit_tracker/manage_habits_screen.dart';
@@ -52,6 +53,10 @@ class _TodayScreenState extends State<TodayScreen> {
   late ValueListenable<Box> _habitListenable;
   late ValueListenable<Box> _settingsListenable;
   late ValueListenable<Box> _dailyLogListenable;
+  late VoidCallback _debouncedLoadHabits;
+  late VoidCallback _debouncedLoadEnvironmentSettings;
+  late VoidCallback _debouncedLoadPausePeriods;
+  late VoidCallback _debouncedOnDailyLogBoxChanged;
   List<Habit> _habits = [];
   Map<String, DailyLog> _dailyCompletionStatus = {};
   List<PausePeriod> _pausePeriods = [];
@@ -81,14 +86,24 @@ class _TodayScreenState extends State<TodayScreen> {
     _habitListenable = _habitBox.listenable();
     _settingsListenable = _settingsBox.listenable();
     _dailyLogListenable = _dailyLogBox.listenable();
+    // A bulk write elsewhere (e.g. reordering habits) fires one Hive
+    // change event per key. Debounce so a burst of events collapses into a
+    // single reload instead of rebuilding this screen once per key, even
+    // while it's kept alive offstage underneath a pushed route.
+    _debouncedLoadHabits = debounceMicrotask(_loadHabits);
+    _debouncedLoadEnvironmentSettings = debounceMicrotask(
+      _loadEnvironmentSettings,
+    );
+    _debouncedLoadPausePeriods = debounceMicrotask(_loadPausePeriods);
+    _debouncedOnDailyLogBoxChanged = debounceMicrotask(_onDailyLogBoxChanged);
     _loadPriorityMetadata();
     _loadEnvironmentSettings();
     _loadHabits();
     _startVisibilityRefreshTimer();
-    _habitListenable.addListener(_loadHabits);
-    _settingsListenable.addListener(_loadEnvironmentSettings);
-    _settingsListenable.addListener(_loadPausePeriods);
-    _dailyLogListenable.addListener(_onDailyLogBoxChanged);
+    _habitListenable.addListener(_debouncedLoadHabits);
+    _settingsListenable.addListener(_debouncedLoadEnvironmentSettings);
+    _settingsListenable.addListener(_debouncedLoadPausePeriods);
+    _dailyLogListenable.addListener(_debouncedOnDailyLogBoxChanged);
     _loadPausePeriods();
   }
 
@@ -98,10 +113,10 @@ class _TodayScreenState extends State<TodayScreen> {
     for (final timer in _pendingCompletionTimers.values) {
       timer.cancel();
     }
-    _habitListenable.removeListener(_loadHabits);
-    _settingsListenable.removeListener(_loadEnvironmentSettings);
-    _settingsListenable.removeListener(_loadPausePeriods);
-    _dailyLogListenable.removeListener(_onDailyLogBoxChanged);
+    _habitListenable.removeListener(_debouncedLoadHabits);
+    _settingsListenable.removeListener(_debouncedLoadEnvironmentSettings);
+    _settingsListenable.removeListener(_debouncedLoadPausePeriods);
+    _dailyLogListenable.removeListener(_debouncedOnDailyLogBoxChanged);
     super.dispose();
   }
 

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/models.dart';
+import 'package:habit_tracker/utils/debounced_callback.dart';
 import 'package:habit_tracker/utils/habit_schedule_utils.dart' as schedule_utils;
 import 'package:habit_tracker/utils/time_budget_utils.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -28,6 +29,8 @@ class _WeeklyTimeScreenState extends State<WeeklyTimeScreen> {
   late Box<dynamic> _settingsBox;
   late ValueListenable<Box<dynamic>> _habitListenable;
   late ValueListenable<Box<dynamic>> _settingsListenable;
+  late VoidCallback _debouncedLoadHabits;
+  late VoidCallback _debouncedLoadSettings;
   List<Habit> _habits = [];
   int? _dailyLimitMinutes;
   late DateTime _weekStart;
@@ -39,17 +42,22 @@ class _WeeklyTimeScreenState extends State<WeeklyTimeScreen> {
     _settingsBox = Hive.box(HiveBoxNames.appSettings);
     _habitListenable = _habitBox.listenable();
     _settingsListenable = _settingsBox.listenable();
+    // A bulk write elsewhere (e.g. reordering habits) fires one Hive
+    // change event per key. Debounce so a burst of events collapses into a
+    // single reload instead of one full rebuild per key.
+    _debouncedLoadHabits = debounceMicrotask(_loadHabits);
+    _debouncedLoadSettings = debounceMicrotask(_loadSettings);
     _weekStart = _mondayOf(schedule_utils.normalizeDate(DateTime.now()));
     _loadHabits();
     _loadSettings();
-    _habitListenable.addListener(_loadHabits);
-    _settingsListenable.addListener(_loadSettings);
+    _habitListenable.addListener(_debouncedLoadHabits);
+    _settingsListenable.addListener(_debouncedLoadSettings);
   }
 
   @override
   void dispose() {
-    _habitListenable.removeListener(_loadHabits);
-    _settingsListenable.removeListener(_loadSettings);
+    _habitListenable.removeListener(_debouncedLoadHabits);
+    _settingsListenable.removeListener(_debouncedLoadSettings);
     super.dispose();
   }
 

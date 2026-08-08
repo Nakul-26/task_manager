@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/reminder_service.dart';
+import 'package:habit_tracker/utils/debounced_callback.dart';
 import 'package:habit_tracker/utils/habit_schedule_utils.dart'
     as schedule_utils;
 import 'package:habit_tracker/utils/pause_utils.dart';
@@ -21,6 +22,7 @@ class _PausedSessionsScreenState extends State<PausedSessionsScreen> {
   late Box<dynamic> _habitBox;
   late Box<dynamic> _settingsBox;
   late ValueListenable<Box<dynamic>> _settingsListenable;
+  late VoidCallback _debouncedLoadPausePeriods;
   List<PausePeriod> _pausePeriods = [];
 
   @override
@@ -29,13 +31,17 @@ class _PausedSessionsScreenState extends State<PausedSessionsScreen> {
     _habitBox = Hive.box<dynamic>(HiveBoxNames.habits);
     _settingsBox = Hive.box<dynamic>(HiveBoxNames.appSettings);
     _settingsListenable = _settingsBox.listenable();
-    _settingsListenable.addListener(_loadPausePeriods);
+    // A bulk write elsewhere fires one Hive change event per key. Debounce
+    // so a burst of events collapses into a single reload instead of one
+    // full rebuild per key.
+    _debouncedLoadPausePeriods = debounceMicrotask(_loadPausePeriods);
+    _settingsListenable.addListener(_debouncedLoadPausePeriods);
     _loadPausePeriods();
   }
 
   @override
   void dispose() {
-    _settingsListenable.removeListener(_loadPausePeriods);
+    _settingsListenable.removeListener(_debouncedLoadPausePeriods);
     super.dispose();
   }
 
