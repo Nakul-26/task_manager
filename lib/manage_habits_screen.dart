@@ -63,6 +63,19 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
     }).toList();
   }
 
+  // Hive notifies the box listener synchronously on every put(), which
+  // would otherwise re-enter _loadHabits (and its setState) while we're
+  // still in the middle of a bulk write, causing crashes/hangs. Silence
+  // the listener for the duration of any multi-put operation.
+  void _withoutBoxListener(void Function() action) {
+    _habitBox.listenable().removeListener(_loadHabits);
+    try {
+      action();
+    } finally {
+      _habitBox.listenable().addListener(_loadHabits);
+    }
+  }
+
   void _ensureSortOrder(List<Habit> habits) {
     bool needsSave = false;
     for (int i = 0; i < habits.length; i++) {
@@ -72,17 +85,21 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
       }
     }
     if (needsSave) {
-      for (final habit in habits) {
-        _habitBox.put(habit.id, habit.toMap());
-      }
+      _withoutBoxListener(() {
+        for (final habit in habits) {
+          _habitBox.put(habit.id, habit.toMap());
+        }
+      });
     }
   }
 
   void _persistOrder() {
-    for (int i = 0; i < _activeHabits.length; i++) {
-      _activeHabits[i].sortOrder = i;
-      _habitBox.put(_activeHabits[i].id, _activeHabits[i].toMap());
-    }
+    _withoutBoxListener(() {
+      for (int i = 0; i < _activeHabits.length; i++) {
+        _activeHabits[i].sortOrder = i;
+        _habitBox.put(_activeHabits[i].id, _activeHabits[i].toMap());
+      }
+    });
   }
 
   void _onReorder(int oldIndex, int newIndex) {

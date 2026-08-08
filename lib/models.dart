@@ -694,6 +694,7 @@ class DailyLog {
   late Frequency? frequency;
   late List<int>? daysOfWeek;
   late int? timesPerDay;
+  late int? xpAwarded;
 
   DailyLog({
     required this.date,
@@ -705,6 +706,7 @@ class DailyLog {
     this.frequency,
     this.daysOfWeek,
     this.timesPerDay,
+    this.xpAwarded,
   });
 
   Map<String, dynamic> toMap() {
@@ -718,6 +720,7 @@ class DailyLog {
       'frequency': frequency?.index,
       'daysOfWeek': daysOfWeek,
       'timesPerDay': timesPerDay,
+      'xpAwarded': xpAwarded,
     };
   }
 
@@ -735,6 +738,7 @@ class DailyLog {
           ? List<int>.from(map['daysOfWeek'])
           : null,
       timesPerDay: map['timesPerDay'],
+      xpAwarded: map['xpAwarded'],
     );
   }
 }

@@ -25,6 +25,7 @@ import 'package:share_plus/share_plus.dart';
 const String _priorityXpKey = 'priorityXp';
 const String _priorityEmergencyUnlockKey = 'priorityEmergencyUnlockDate';
 const double _priorityUnlockThreshold = 0.75;
+const int _xpPerLevel = 100;
 
 enum _TodayMenuAction {
   exportTodayList,
@@ -549,50 +550,48 @@ class _TodayScreenState extends State<TodayScreen> {
           if (mounted) {
             setState(() {});
           }
+          final updatedXp = await _tryAwardXpForCompletion(
+            habit,
+            log,
+            wasCompleted,
+            log.completed,
+          );
           _isLocalMutating = true;
           try {
             await _dailyLogBox.put('${habit.id}_$today', log.toMap());
           } finally {
             _isLocalMutating = false;
           }
-          final updatedXp = await _tryAwardXpForCompletion(
-            habit,
-            wasCompleted,
-            log.completed,
-          );
           if (!mounted) {
             return;
           }
           setState(() {
             _calculateAllStats();
-            if (updatedXp != null) {
-              _totalXp = updatedXp;
-            }
+            _applyXpUpdate(updatedXp);
           });
         },
       );
       return;
     }
 
+    final updatedXp = await _tryAwardXpForCompletion(
+      habit,
+      log,
+      wasCompleted,
+      log.completed,
+    );
     _isLocalMutating = true;
     try {
       await _dailyLogBox.put('${habit.id}_$today', log.toMap());
     } finally {
       _isLocalMutating = false;
     }
-    final updatedXp = await _tryAwardXpForCompletion(
-      habit,
-      wasCompleted,
-      log.completed,
-    );
     if (!mounted) {
       return;
     }
     setState(() {
       _calculateAllStats();
-      if (updatedXp != null) {
-        _totalXp = updatedXp;
-      }
+      _applyXpUpdate(updatedXp);
     });
   }
 
@@ -621,23 +620,22 @@ class _TodayScreenState extends State<TodayScreen> {
       }
       log.completed = true;
     }
+    final updatedXp = await _tryAwardXpForCompletion(
+      habit,
+      log,
+      wasCompleted,
+      log.completed,
+    );
     _isLocalMutating = true;
     try {
       await _dailyLogBox.put('${habit.id}_$today', log.toMap());
     } finally {
       _isLocalMutating = false;
     }
-    final updatedXp = await _tryAwardXpForCompletion(
-      habit,
-      wasCompleted,
-      log.completed,
-    );
     setState(() {
       _dailyCompletionStatus[habit.id] = log;
       _calculateAllStats();
-      if (updatedXp != null) {
-        _totalXp = updatedXp;
-      }
+      _applyXpUpdate(updatedXp);
     });
   }
 
@@ -656,41 +654,80 @@ class _TodayScreenState extends State<TodayScreen> {
       log.completed = false;
       log.quality = null;
     }
+    final updatedXp = await _tryAwardXpForCompletion(
+      habit,
+      log,
+      wasCompleted,
+      log.completed,
+    );
     _isLocalMutating = true;
     try {
       await _dailyLogBox.put('${habit.id}_$today', log.toMap());
     } finally {
       _isLocalMutating = false;
     }
-    final updatedXp = await _tryAwardXpForCompletion(
-      habit,
-      wasCompleted,
-      log.completed,
-    );
     setState(() {
       _dailyCompletionStatus[habit.id] = log;
       _calculateAllStats();
-      if (updatedXp != null) {
-        _totalXp = updatedXp;
-      }
+      _applyXpUpdate(updatedXp);
     });
   }
 
+  int _levelForXp(int xp) => (xp < 0 ? 0 : xp) ~/ _xpPerLevel + 1;
+
   Future<int?> _tryAwardXpForCompletion(
     Habit habit,
+    DailyLog log,
     bool wasCompleted,
     bool isCompleted,
   ) async {
-    if (wasCompleted || !isCompleted) {
-      return null;
+    if (isCompleted && !wasCompleted) {
+      if (log.xpAwarded != null) {
+        // Already rewarded for this log (e.g. rapid re-tap); don't double-pay.
+        return null;
+      }
+      final reward = habit.priorityLevel.xpReward;
+      if (reward <= 0) {
+        return null;
+      }
+      log.xpAwarded = reward;
+      final nextTotal = _totalXp + reward;
+      await _settingsBox.put(_priorityXpKey, nextTotal);
+      return nextTotal;
     }
-    final reward = habit.priorityLevel.xpReward;
-    if (reward <= 0) {
-      return null;
+    if (!isCompleted && wasCompleted) {
+      final awarded = log.xpAwarded;
+      if (awarded == null || awarded <= 0) {
+        return null;
+      }
+      log.xpAwarded = null;
+      final nextTotal = _totalXp - awarded < 0 ? 0 : _totalXp - awarded;
+      await _settingsBox.put(_priorityXpKey, nextTotal);
+      return nextTotal;
     }
-    final nextTotal = _totalXp + reward;
-    await _settingsBox.put(_priorityXpKey, nextTotal);
-    return nextTotal;
+    return null;
+  }
+
+  void _applyXpUpdate(int? updatedXp) {
+    if (updatedXp == null) {
+      return;
+    }
+    final previousLevel = _levelForXp(_totalXp);
+    _totalXp = updatedXp;
+    final newLevel = _levelForXp(updatedXp);
+    if (newLevel > previousLevel) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Level up! You reached Level $newLevel.'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      });
+    }
   }
 
   Future<int?> _promptForQuality(Habit habit, {int? initialQuality}) {
@@ -1238,10 +1275,6 @@ class _TodayScreenState extends State<TodayScreen> {
           const SizedBox(height: 16),
           _buildExecutionContextFilter(),
           const SizedBox(height: 8),
-          _buildEnvironmentSummaryCard(
-            priorityStats: priorityStats,
-          ),
-          const SizedBox(height: 8),
           _buildXpCard(),
           const SizedBox(height: 16),
           for (final level in PriorityLevel.values) ...[
@@ -1259,53 +1292,13 @@ class _TodayScreenState extends State<TodayScreen> {
     );
   }
 
-  Widget _buildEnvironmentSummaryCard({
-    required Map<PriorityLevel, _PriorityLevelStats> priorityStats,
-  }) {
-    final selectedEnvironmentId = _selectedEnvironmentId;
-    final contextLabel = selectedEnvironmentId == null
-        ? 'All environments'
-        : environmentDisplayName(_environments, selectedEnvironmentId);
-    final coreStats =
-        priorityStats[PriorityLevel.core] ?? const _PriorityLevelStats(0, 0);
-    final importantStats = priorityStats[PriorityLevel.secondary] ??
-        const _PriorityLevelStats(0, 0);
-    final optionalStats = priorityStats[PriorityLevel.optional] ??
-        const _PriorityLevelStats(0, 0);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Card(
-        margin: EdgeInsets.zero,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Execution overview',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 8),
-              Text('Current environment: $contextLabel'),
-              const SizedBox(height: 10),
-              Text('Core: ${coreStats.total}'),
-              Text('Important: ${importantStats.total}'),
-              Text('Optional: ${optionalStats.total}'),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildPrioritySection({
     required PriorityLevel level,
     required List<Habit> habits,
     required _PriorityLevelStats stats,
     required bool isTodayPaused,
   }) {
-    final isExpanded = _expandedPrioritySections[level] ?? true;
+    final isExpanded = _expandedPrioritySections[level] ?? false;
     final activeHabits = habits
         .where((habit) => !_isHabitShownAsCompletedToday(habit))
         .toList();
@@ -1320,8 +1313,11 @@ class _TodayScreenState extends State<TodayScreen> {
         child: InkWell(
           onTap: () {
             setState(() {
-              _expandedPrioritySections[level] =
-                  !(_expandedPrioritySections[level] ?? true);
+              final wasExpanded = _expandedPrioritySections[level] ?? false;
+              for (final other in PriorityLevel.values) {
+                _expandedPrioritySections[other] = false;
+              }
+              _expandedPrioritySections[level] = !wasExpanded;
             });
           },
           child: Padding(
@@ -1455,43 +1451,49 @@ class _TodayScreenState extends State<TodayScreen> {
       child: Card(
         margin: EdgeInsets.zero,
         child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
             children: [
-              const Text(
-                'Current environment',
-                style: TextStyle(fontWeight: FontWeight.w600),
+              Icon(
+                Icons.place_outlined,
+                size: 18,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
-              const SizedBox(height: 4),
-              const Text('Choose the environment you are actually in.'),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  ChoiceChip(
-                    label: const Text('All'),
-                    selected: selectedEnvironmentId == null,
-                    onSelected: (_) {
-                      setState(() {
-                        _selectedEnvironmentId = null;
-                      });
-                    },
+              const SizedBox(width: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      ChoiceChip(
+                        label: const Text('All'),
+                        visualDensity: VisualDensity.compact,
+                        selected: selectedEnvironmentId == null,
+                        onSelected: (_) {
+                          setState(() {
+                            _selectedEnvironmentId = null;
+                          });
+                        },
+                      ),
+                      ..._environments.map((environment) {
+                        return Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: ChoiceChip(
+                            avatar: Icon(environment.icon, size: 16),
+                            label: Text(environment.name),
+                            visualDensity: VisualDensity.compact,
+                            selected: selectedEnvironmentId == environment.id,
+                            onSelected: (_) {
+                              setState(() {
+                                _selectedEnvironmentId = environment.id;
+                              });
+                            },
+                          ),
+                        );
+                      }),
+                    ],
                   ),
-                  ..._environments.map((environment) {
-                    return ChoiceChip(
-                      avatar: Icon(environment.icon, size: 18),
-                      label: Text(environment.name),
-                      selected: selectedEnvironmentId == environment.id,
-                      onSelected: (_) {
-                        setState(() {
-                          _selectedEnvironmentId = environment.id;
-                        });
-                      },
-                    );
-                  }),
-                ],
+                ),
               ),
             ],
           ),
@@ -1590,24 +1592,54 @@ class _TodayScreenState extends State<TodayScreen> {
   }
 
   Widget _buildXpCard() {
+    final level = _levelForXp(_totalXp);
+    final xpIntoLevel = _totalXp % _xpPerLevel;
+    final progress = xpIntoLevel / _xpPerLevel;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Card(
         margin: EdgeInsets.zero,
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.auto_graph, color: Colors.amber),
-              const SizedBox(width: 12),
-              const Text(
-                'XP points',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              Row(
+                children: [
+                  const Icon(Icons.auto_graph, color: Colors.amber),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Level $level',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '$_totalXp XP total',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
-              const Spacer(),
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 8,
+                  backgroundColor:
+                      Theme.of(context).colorScheme.surfaceContainerHighest,
+                  valueColor: const AlwaysStoppedAnimation(Colors.amber),
+                ),
+              ),
+              const SizedBox(height: 4),
               Text(
-                '$_totalXp XP',
-                style: const TextStyle(fontWeight: FontWeight.bold),
+                '$xpIntoLevel / $_xpPerLevel XP to Level ${level + 1}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
