@@ -174,7 +174,9 @@ class _TodayScreenState extends State<TodayScreen> {
     if (selectedEnvironmentId == null) {
       return habits;
     }
-    return habits.where((habit) => habit.environmentId == selectedEnvironmentId).toList();
+    return habits
+        .where((habit) => habit.environmentIds.contains(selectedEnvironmentId))
+        .toList();
   }
 
   List<Habit> _sortHabitsForDisplay(List<Habit> habits) {
@@ -209,7 +211,7 @@ class _TodayScreenState extends State<TodayScreen> {
         }
         return selectedEnvironmentId == null
             ? true
-            : habit.environmentId == selectedEnvironmentId;
+            : habit.environmentIds.contains(selectedEnvironmentId);
       }).toList(),
     );
   }
@@ -223,7 +225,7 @@ class _TodayScreenState extends State<TodayScreen> {
       habits
           .where((habit) {
             return !habit.isStrategicAnchor &&
-                habit.environmentId != selectedEnvironmentId;
+                !habit.environmentIds.contains(selectedEnvironmentId);
           })
           .toList(),
     );

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/models.dart';
@@ -19,6 +20,7 @@ class PausedSessionsScreen extends StatefulWidget {
 class _PausedSessionsScreenState extends State<PausedSessionsScreen> {
   late Box<dynamic> _habitBox;
   late Box<dynamic> _settingsBox;
+  late ValueListenable<Box<dynamic>> _settingsListenable;
   List<PausePeriod> _pausePeriods = [];
 
   @override
@@ -26,13 +28,14 @@ class _PausedSessionsScreenState extends State<PausedSessionsScreen> {
     super.initState();
     _habitBox = Hive.box<dynamic>(HiveBoxNames.habits);
     _settingsBox = Hive.box<dynamic>(HiveBoxNames.appSettings);
-    _settingsBox.listenable().addListener(_loadPausePeriods);
+    _settingsListenable = _settingsBox.listenable();
+    _settingsListenable.addListener(_loadPausePeriods);
     _loadPausePeriods();
   }
 
   @override
   void dispose() {
-    _settingsBox.listenable().removeListener(_loadPausePeriods);
+    _settingsListenable.removeListener(_loadPausePeriods);
     super.dispose();
   }
 

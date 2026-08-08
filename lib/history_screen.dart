@@ -19,6 +19,8 @@ class HistoryScreenState extends State<HistoryScreen> {
   late Box _habitBox;
   late Box _dailyLogBox;
   late Box _settingsBox;
+  late ValueListenable<Box> _habitListenable;
+  late ValueListenable<Box> _settingsListenable;
   late ValueListenable<Box> _dailyLogListenable;
   List<Habit> _habits = [];
   List<PausePeriod> _pausePeriods = [];
@@ -33,18 +35,20 @@ class HistoryScreenState extends State<HistoryScreen> {
     _habitBox = Hive.box(HiveBoxNames.habits);
     _dailyLogBox = Hive.box(HiveBoxNames.dailyLogs);
     _settingsBox = Hive.box(HiveBoxNames.appSettings);
+    _habitListenable = _habitBox.listenable();
+    _settingsListenable = _settingsBox.listenable();
     _dailyLogListenable = _dailyLogBox.listenable();
     _loadHabits();
-    _habitBox.listenable().addListener(_loadHabits);
-    _settingsBox.listenable().addListener(_loadPausePeriods);
+    _habitListenable.addListener(_loadHabits);
+    _settingsListenable.addListener(_loadPausePeriods);
     _dailyLogListenable.addListener(_loadHabits);
     _loadPausePeriods();
   }
 
   @override
   void dispose() {
-    _habitBox.listenable().removeListener(_loadHabits);
-    _settingsBox.listenable().removeListener(_loadPausePeriods);
+    _habitListenable.removeListener(_loadHabits);
+    _settingsListenable.removeListener(_loadPausePeriods);
     _dailyLogListenable.removeListener(_loadHabits);
     super.dispose();
   }

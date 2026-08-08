@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:habit_tracker/box_names.dart';
@@ -30,19 +31,21 @@ class ManageEnvironmentsScreen extends StatefulWidget {
 
 class _ManageEnvironmentsScreenState extends State<ManageEnvironmentsScreen> {
   late Box<dynamic> _settingsBox;
+  late ValueListenable<Box<dynamic>> _settingsListenable;
   List<ExecutionEnvironment> _environments = [];
 
   @override
   void initState() {
     super.initState();
     _settingsBox = Hive.box(HiveBoxNames.appSettings);
+    _settingsListenable = _settingsBox.listenable();
     _loadEnvironments();
-    _settingsBox.listenable().addListener(_loadEnvironments);
+    _settingsListenable.addListener(_loadEnvironments);
   }
 
   @override
   void dispose() {
-    _settingsBox.listenable().removeListener(_loadEnvironments);
+    _settingsListenable.removeListener(_loadEnvironments);
     super.dispose();
   }
 

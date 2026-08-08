@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:habit_tracker/add_edit_habit_screen.dart';
 import 'package:habit_tracker/archived_habits_screen.dart';
@@ -20,6 +21,7 @@ class ManageHabitsScreen extends StatefulWidget {
 
 class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
   late Box<dynamic> _habitBox;
+  late ValueListenable<Box<dynamic>> _habitListenable;
   List<Habit> _activeHabits = [];
   String _searchQuery = '';
 
@@ -27,13 +29,18 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
   void initState() {
     super.initState();
     _habitBox = Hive.box(HiveBoxNames.habits);
+    // Box.listenable() returns a NEW wrapper object on every call, so we
+    // must cache a single instance here and reuse it for add/removeListener
+    // below — otherwise removeListener silently targets an empty wrapper
+    // and never actually detaches the original listener.
+    _habitListenable = _habitBox.listenable();
     _loadHabits();
-    _habitBox.listenable().addListener(_loadHabits);
+    _habitListenable.addListener(_loadHabits);
   }
 
   @override
   void dispose() {
-    _habitBox.listenable().removeListener(_loadHabits);
+    _habitListenable.removeListener(_loadHabits);
     super.dispose();
   }
 
@@ -59,7 +66,7 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
     return _activeHabits.where((habit) {
       return habit.name.toLowerCase().contains(query) ||
           habit.description.toLowerCase().contains(query) ||
-          habit.environmentId.toLowerCase().contains(query);
+          habit.environmentIds.any((id) => id.toLowerCase().contains(query));
     }).toList();
   }
 
@@ -68,11 +75,11 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
   // still in the middle of a bulk write, causing crashes/hangs. Silence
   // the listener for the duration of any multi-put operation.
   void _withoutBoxListener(void Function() action) {
-    _habitBox.listenable().removeListener(_loadHabits);
+    _habitListenable.removeListener(_loadHabits);
     try {
       action();
     } finally {
-      _habitBox.listenable().addListener(_loadHabits);
+      _habitListenable.addListener(_loadHabits);
     }
   }
 

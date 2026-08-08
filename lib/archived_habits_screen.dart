@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:habit_tracker/add_edit_habit_screen.dart';
 import 'package:habit_tracker/box_names.dart';
@@ -14,19 +15,21 @@ class ArchivedHabitsScreen extends StatefulWidget {
 
 class _ArchivedHabitsScreenState extends State<ArchivedHabitsScreen> {
   late Box<dynamic> _habitBox;
+  late ValueListenable<Box<dynamic>> _habitListenable;
   List<Habit> _archivedHabits = [];
 
   @override
   void initState() {
     super.initState();
     _habitBox = Hive.box(HiveBoxNames.habits);
+    _habitListenable = _habitBox.listenable();
     _loadArchivedHabits();
-    _habitBox.listenable().addListener(_loadArchivedHabits);
+    _habitListenable.addListener(_loadArchivedHabits);
   }
 
   @override
   void dispose() {
-    _habitBox.listenable().removeListener(_loadArchivedHabits);
+    _habitListenable.removeListener(_loadArchivedHabits);
     super.dispose();
   }
 

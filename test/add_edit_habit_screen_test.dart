@@ -29,7 +29,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.byType(DropdownButtonFormField<String>), findsAtLeastNWidgets(1));
-    expect(find.text('Execution Environment'), findsOneWidget);
+    expect(find.text('Execution Environments'), findsOneWidget);
+    expect(find.byType(FilterChip), findsAtLeastNWidgets(1));
   });
 }

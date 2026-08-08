@@ -33,7 +33,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
   late Box<dynamic> _settingsBox;
   HabitType _type = HabitType.binary;
   Frequency _frequency = Frequency.daily;
-  String _environmentId = 'quickTask';
+  Set<String> _selectedEnvironmentIds = {'quickTask'};
   List<ExecutionEnvironment> _environments = const [];
   int? _timesPerDay;
   int? _timerMinutes;
@@ -72,10 +72,12 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
       _description = widget.habit!.description;
       _type = widget.habit!.type;
       _frequency = widget.habit!.frequency;
-      _environmentId = widget.habit!.environmentId;
-      if (findExecutionEnvironment(_environments, _environmentId) == null &&
-          _environments.isNotEmpty) {
-        _environmentId = _environments.first.id;
+      _selectedEnvironmentIds = widget.habit!.environmentIds.toSet();
+      _selectedEnvironmentIds.removeWhere(
+        (id) => findExecutionEnvironment(_environments, id) == null,
+      );
+      if (_selectedEnvironmentIds.isEmpty && _environments.isNotEmpty) {
+        _selectedEnvironmentIds = {_environments.first.id};
       }
       _timesPerDay = widget.habit!.timesPerDay;
       _timerMinutes = widget.habit!.timerMinutes;
@@ -111,7 +113,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
       _startDate = _normalizeDate(DateTime.now());
       _endDate = null;
       if (_environments.isNotEmpty) {
-        _environmentId = _environments.first.id;
+        _selectedEnvironmentIds = {_environments.first.id};
       }
     }
     _nameController = TextEditingController(text: _name);
@@ -220,6 +222,14 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
         );
         return;
       }
+      if (_selectedEnvironmentIds.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please select at least one execution environment.'),
+          ),
+        );
+        return;
+      }
       final habitBox = Hive.box(HiveBoxNames.habits);
       int sortOrder = widget.habit?.sortOrder ?? -1;
       if (widget.habit == null) {
@@ -244,8 +254,10 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
         isArchived: widget.habit?.isArchived ?? false,
         type: _type,
         frequency: _frequency,
-        executionContext: _legacyExecutionContextForEnvironment(_environmentId),
-        environmentId: _environmentId,
+        executionContext: _legacyExecutionContextForEnvironment(
+          _selectedEnvironmentIds.first,
+        ),
+        environmentIds: _selectedEnvironmentIds.toList(),
         timesPerDay: _timesPerDay,
         timerMinutes: _timerMinutes,
         daysOfWeek: _daysOfWeek,
@@ -301,9 +313,11 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
     }
     setState(() {
       _environments = loadExecutionEnvironments(_settingsBox);
-      if (findExecutionEnvironment(_environments, _environmentId) == null &&
-          _environments.isNotEmpty) {
-        _environmentId = _environments.first.id;
+      _selectedEnvironmentIds.removeWhere(
+        (id) => findExecutionEnvironment(_environments, id) == null,
+      );
+      if (_selectedEnvironmentIds.isEmpty && _environments.isNotEmpty) {
+        _selectedEnvironmentIds = {_environments.first.id};
       }
     });
   }
@@ -561,38 +575,42 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                         });
                       },
                     ),
-                    DropdownButtonFormField<String>(
-                      initialValue: _environmentId,
+                    InputDecorator(
                       decoration: const InputDecoration(
-                        labelText: 'Execution Environment',
+                        labelText: 'Execution Environments',
                         border: OutlineInputBorder(),
                         helperText:
-                            'Where this habit is realistically executable.',
+                            'Where this habit is realistically executable. Select one or more.',
                       ),
-                      items: _environments.map((environment) {
-                        return DropdownMenuItem(
-                          value: environment.id,
-                          child: Row(
-                            children: [
-                              Icon(
-                                environment.icon,
-                                size: 18,
-                                color: environment.color,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(environment.name),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        if (value == null) {
-                          return;
-                        }
-                        setState(() {
-                          _environmentId = value;
-                        });
-                      },
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: _environments.map((environment) {
+                          final isSelected = _selectedEnvironmentIds.contains(
+                            environment.id,
+                          );
+                          return FilterChip(
+                            avatar: Icon(
+                              environment.icon,
+                              size: 18,
+                              color: isSelected ? null : environment.color,
+                            ),
+                            label: Text(environment.name),
+                            selected: isSelected,
+                            onSelected: (selected) {
+                              setState(() {
+                                if (selected) {
+                                  _selectedEnvironmentIds.add(environment.id);
+                                } else {
+                                  _selectedEnvironmentIds.remove(
+                                    environment.id,
+                                  );
+                                }
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
                     ),
                     Align(
                       alignment: Alignment.centerLeft,

@@ -8,6 +8,20 @@ enum ExecutionContext { deepWork, college, quickTask }
 
 enum PriorityLevel { core, secondary, optional }
 
+bool _stringListEquals(List<String> a, List<String> b) {
+  if (a.length != b.length) {
+    return false;
+  }
+  final sortedA = List<String>.from(a)..sort();
+  final sortedB = List<String>.from(b)..sort();
+  for (int i = 0; i < sortedA.length; i++) {
+    if (sortedA[i] != sortedB[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 const Map<String, IconData> executionEnvironmentIcons = {
   'psychology': Icons.psychology,
   'school': Icons.school,
@@ -232,7 +246,7 @@ class Habit {
   late HabitType type;
   late Frequency frequency;
   late ExecutionContext executionContext;
-  late String environmentId;
+  late List<String> environmentIds;
   late List<int>? daysOfWeek; // 1 for Monday, 7 for Sunday
   late int? timesPerDay;
   late bool reminderEnabled;
@@ -262,7 +276,7 @@ class Habit {
     this.type = HabitType.binary,
     this.frequency = Frequency.daily,
     this.executionContext = ExecutionContext.quickTask,
-    String? environmentId,
+    List<String>? environmentIds,
     this.daysOfWeek,
     this.timesPerDay,
     this.reminderEnabled = false,
@@ -281,7 +295,9 @@ class Habit {
     this.sortOrder = -1,
     List<PausePeriod>? pausePeriods,
     List<HabitRuleSnapshot>? ruleHistory,
-  }) : environmentId = environmentId ?? _defaultEnvironmentIdFor(executionContext),
+  }) : environmentIds = (environmentIds != null && environmentIds.isNotEmpty)
+           ? List<String>.from(environmentIds)
+           : [_defaultEnvironmentIdFor(executionContext)],
        startDate = startDate ?? createdAt {
     this.pausePeriods = pausePeriods ?? [];
     this.ruleHistory =
@@ -307,7 +323,7 @@ class Habit {
       'type': type.index,
       'frequency': frequency.index,
       'executionContext': executionContext.index,
-      'environmentId': environmentId,
+      'environmentIds': environmentIds,
       'daysOfWeek': daysOfWeek,
       'timesPerDay': timesPerDay,
       'reminderEnabled': reminderEnabled,
@@ -353,8 +369,9 @@ class Habit {
     if (executionContext != ExecutionContext.quickTask) {
       map['executionContext'] = executionContext.index;
     }
-    if (environmentId != _defaultEnvironmentIdFor(executionContext)) {
-      map['environmentId'] = environmentId;
+    final defaultEnvironmentIds = [_defaultEnvironmentIdFor(executionContext)];
+    if (!_stringListEquals(environmentIds, defaultEnvironmentIds)) {
+      map['environmentIds'] = environmentIds;
     }
     if (daysOfWeek != null && daysOfWeek!.isNotEmpty) {
       map['daysOfWeek'] = List<int>.from(daysOfWeek!);
@@ -435,7 +452,7 @@ class Habit {
       type: HabitType.values[map['type'] ?? 0],
       frequency: Frequency.values[map['frequency'] ?? 0],
       executionContext: _parseExecutionContext(map['executionContext']),
-      environmentId: _parseEnvironmentId(map),
+      environmentIds: _parseEnvironmentIds(map),
       daysOfWeek: map['daysOfWeek'] != null
           ? List<int>.from(map['daysOfWeek'])
           : null,
@@ -582,14 +599,26 @@ class Habit {
     return ExecutionContext.quickTask;
   }
 
-  static String _parseEnvironmentId(Map<String, dynamic> map) {
-    final environmentId = map['environmentId'];
-    if (environmentId is String && environmentId.trim().isNotEmpty) {
-      return environmentId;
+  static List<String> _parseEnvironmentIds(Map<String, dynamic> map) {
+    final rawList = map['environmentIds'];
+    if (rawList is List) {
+      final ids = rawList
+          .whereType<String>()
+          .map((id) => id.trim())
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+      if (ids.isNotEmpty) {
+        return ids;
+      }
     }
-    return _defaultEnvironmentIdFor(
-      _parseExecutionContext(map['executionContext']),
-    );
+    final legacyId = map['environmentId'];
+    if (legacyId is String && legacyId.trim().isNotEmpty) {
+      return [legacyId.trim()];
+    }
+    return [
+      _defaultEnvironmentIdFor(_parseExecutionContext(map['executionContext'])),
+    ];
   }
 
   static String _defaultEnvironmentIdFor(ExecutionContext context) {

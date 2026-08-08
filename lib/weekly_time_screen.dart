@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/models.dart';
@@ -25,6 +26,8 @@ class WeeklyTimeScreen extends StatefulWidget {
 class _WeeklyTimeScreenState extends State<WeeklyTimeScreen> {
   late Box<dynamic> _habitBox;
   late Box<dynamic> _settingsBox;
+  late ValueListenable<Box<dynamic>> _habitListenable;
+  late ValueListenable<Box<dynamic>> _settingsListenable;
   List<Habit> _habits = [];
   int? _dailyLimitMinutes;
   late DateTime _weekStart;
@@ -34,17 +37,19 @@ class _WeeklyTimeScreenState extends State<WeeklyTimeScreen> {
     super.initState();
     _habitBox = Hive.box(HiveBoxNames.habits);
     _settingsBox = Hive.box(HiveBoxNames.appSettings);
+    _habitListenable = _habitBox.listenable();
+    _settingsListenable = _settingsBox.listenable();
     _weekStart = _mondayOf(schedule_utils.normalizeDate(DateTime.now()));
     _loadHabits();
     _loadSettings();
-    _habitBox.listenable().addListener(_loadHabits);
-    _settingsBox.listenable().addListener(_loadSettings);
+    _habitListenable.addListener(_loadHabits);
+    _settingsListenable.addListener(_loadSettings);
   }
 
   @override
   void dispose() {
-    _habitBox.listenable().removeListener(_loadHabits);
-    _settingsBox.listenable().removeListener(_loadSettings);
+    _habitListenable.removeListener(_loadHabits);
+    _settingsListenable.removeListener(_loadSettings);
     super.dispose();
   }
 
