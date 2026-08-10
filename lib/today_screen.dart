@@ -1647,7 +1647,7 @@ class _TodayScreenState extends State<TodayScreen> {
                   minHeight: 8,
                   backgroundColor:
                       Theme.of(context).colorScheme.surfaceContainerHighest,
-                  valueColor: const AlwaysStoppedAnimation(Colors.amber),
+                  valueColor: const AlwaysStoppedAnimation(Colors.blue),
                 ),
               ),
               const SizedBox(height: 4),

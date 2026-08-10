@@ -9,9 +9,12 @@ import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/reminder_service.dart';
 import 'package:habit_tracker/utils/debounced_callback.dart';
+import 'package:habit_tracker/utils/execution_environment_utils.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+
+enum _ImportanceFilter { any, importantOnly, notImportant }
 
 class ManageHabitsScreen extends StatefulWidget {
   const ManageHabitsScreen({super.key});
@@ -22,15 +25,26 @@ class ManageHabitsScreen extends StatefulWidget {
 
 class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
   late Box<dynamic> _habitBox;
+  late Box<dynamic> _settingsBox;
   late ValueListenable<Box<dynamic>> _habitListenable;
   late VoidCallback _debouncedLoadHabits;
   List<Habit> _activeHabits = [];
+  List<ExecutionEnvironment> _environments = [];
   String _searchQuery = '';
+  bool _isSavingOrder = false;
+
+  Set<String> _filterEnvironmentIds = {};
+  Set<PriorityLevel> _filterPriorityLevels = {};
+  Set<HabitType> _filterHabitTypes = {};
+  Set<Frequency> _filterFrequencies = {};
+  _ImportanceFilter _filterImportance = _ImportanceFilter.any;
 
   @override
   void initState() {
     super.initState();
     _habitBox = Hive.box(HiveBoxNames.habits);
+    _settingsBox = Hive.box(HiveBoxNames.appSettings);
+    _environments = loadExecutionEnvironments(_settingsBox);
     // Box.listenable() returns a NEW wrapper object on every call, so we
     // must cache a single instance here and reuse it for add/removeListener
     // below — otherwise removeListener silently targets an empty wrapper
@@ -57,33 +71,103 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
           .toList();
       final activeHabits = habits.where((habit) => !habit.isArchived).toList();
       _ensureSortOrder(activeHabits);
-      activeHabits.sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+      // Match the Today screen: important habits float to the top
+      // regardless of manual order, so the two screens never disagree.
+      activeHabits.sort((a, b) {
+        final importanceCompare = b.importanceScore.compareTo(
+          a.importanceScore,
+        );
+        if (importanceCompare != 0) {
+          return importanceCompare;
+        }
+        final priorityCompare = a.priorityLevel.index.compareTo(
+          b.priorityLevel.index,
+        );
+        if (priorityCompare != 0) {
+          return priorityCompare;
+        }
+        return a.sortOrder.compareTo(b.sortOrder);
+      });
       setState(() {
         _activeHabits = activeHabits;
       });
     }
   }
 
+  bool get _hasActiveFilters =>
+      _filterEnvironmentIds.isNotEmpty ||
+      _filterPriorityLevels.isNotEmpty ||
+      _filterHabitTypes.isNotEmpty ||
+      _filterFrequencies.isNotEmpty ||
+      _filterImportance != _ImportanceFilter.any;
+
+  int get _activeFilterCount =>
+      (_filterEnvironmentIds.isNotEmpty ? 1 : 0) +
+      (_filterPriorityLevels.isNotEmpty ? 1 : 0) +
+      (_filterHabitTypes.isNotEmpty ? 1 : 0) +
+      (_filterFrequencies.isNotEmpty ? 1 : 0) +
+      (_filterImportance != _ImportanceFilter.any ? 1 : 0);
+
+  bool _matchesFilters(Habit habit) {
+    if (_filterEnvironmentIds.isNotEmpty &&
+        !habit.environmentIds.any(_filterEnvironmentIds.contains)) {
+      return false;
+    }
+    if (_filterPriorityLevels.isNotEmpty &&
+        !_filterPriorityLevels.contains(habit.priorityLevel)) {
+      return false;
+    }
+    if (_filterHabitTypes.isNotEmpty &&
+        !_filterHabitTypes.contains(habit.type)) {
+      return false;
+    }
+    if (_filterFrequencies.isNotEmpty &&
+        !_filterFrequencies.contains(habit.frequency)) {
+      return false;
+    }
+    switch (_filterImportance) {
+      case _ImportanceFilter.importantOnly:
+        if (!habit.isImportant) {
+          return false;
+        }
+        break;
+      case _ImportanceFilter.notImportant:
+        if (habit.isImportant) {
+          return false;
+        }
+        break;
+      case _ImportanceFilter.any:
+        break;
+    }
+    return true;
+  }
+
   List<Habit> get _filteredHabits {
     final query = _searchQuery.trim().toLowerCase();
-    if (query.isEmpty) {
-      return _activeHabits;
-    }
     return _activeHabits.where((habit) {
+      if (!_matchesFilters(habit)) {
+        return false;
+      }
+      if (query.isEmpty) {
+        return true;
+      }
       return habit.name.toLowerCase().contains(query) ||
           habit.description.toLowerCase().contains(query) ||
           habit.environmentIds.any((id) => id.toLowerCase().contains(query));
     }).toList();
   }
 
+  bool get _isBrowsingFiltered =>
+      _searchQuery.trim().isNotEmpty || _hasActiveFilters;
+
   // Hive notifies the box listener synchronously on every put(), which
   // would otherwise re-enter _loadHabits (and its setState) while we're
   // still in the middle of a bulk write, causing crashes/hangs. Silence
   // the listener for the duration of any multi-put operation.
-  void _withoutBoxListener(void Function() action) {
+  Future<void> _withoutBoxListener(Future<void> Function() action) async {
     _habitListenable.removeListener(_debouncedLoadHabits);
     try {
-      action();
+      await action();
     } finally {
       _habitListenable.addListener(_debouncedLoadHabits);
     }
@@ -98,9 +182,7 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
       }
     }
     if (changedHabits.isNotEmpty) {
-      _withoutBoxListener(() {
-        _habitBox.putAll(changedHabits);
-      });
+      _withoutBoxListener(() => _habitBox.putAll(changedHabits));
     }
   }
 
@@ -110,7 +192,7 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
   // 67 frames to the Hive file every time, which is what made every reorder
   // hang. Only write the habits whose sortOrder actually changed, and do it
   // as one batched putAll instead of N separate put calls.
-  void _persistOrder() {
+  Future<void> _persistOrder() async {
     final changedHabits = <String, dynamic>{};
     for (int i = 0; i < _activeHabits.length; i++) {
       if (_activeHabits[i].sortOrder != i) {
@@ -121,19 +203,29 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
     if (changedHabits.isEmpty) {
       return;
     }
-    _withoutBoxListener(() {
-      _habitBox.putAll(changedHabits);
+    await _withoutBoxListener(() => _habitBox.putAll(changedHabits));
+  }
+
+  Future<void> _reorderAndPersist(void Function() reorder) async {
+    setState(() {
+      reorder();
+      _isSavingOrder = true;
     });
+    await _persistOrder();
+    if (mounted) {
+      setState(() {
+        _isSavingOrder = false;
+      });
+    }
   }
 
   void _onReorder(int oldIndex, int newIndex) {
-    setState(() {
+    _reorderAndPersist(() {
       if (newIndex > oldIndex) {
         newIndex -= 1;
       }
       final habit = _activeHabits.removeAt(oldIndex);
       _activeHabits.insert(newIndex, habit);
-      _persistOrder();
     });
   }
 
@@ -151,10 +243,9 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
       return;
     }
 
-    setState(() {
+    _reorderAndPersist(() {
       final moved = _activeHabits.removeAt(currentIndex);
       _activeHabits.insert(targetIndex, moved);
-      _persistOrder();
     });
   }
 
@@ -222,10 +313,9 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
       return;
     }
 
-    setState(() {
+    await _reorderAndPersist(() {
       final moved = _activeHabits.removeAt(currentIndex);
       _activeHabits.insert(targetIndex, moved);
-      _persistOrder();
     });
   }
 
@@ -286,6 +376,239 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
     setState(() {
       _searchQuery = '';
     });
+  }
+
+  String _priorityLevelLabel(PriorityLevel level) {
+    switch (level) {
+      case PriorityLevel.core:
+        return 'Core';
+      case PriorityLevel.secondary:
+        return 'Secondary';
+      case PriorityLevel.optional:
+        return 'Optional';
+    }
+  }
+
+  String _habitTypeLabel(HabitType type) {
+    switch (type) {
+      case HabitType.binary:
+        return 'Binary (yes/no)';
+      case HabitType.counted:
+        return 'Counted';
+    }
+  }
+
+  String _frequencyLabel(Frequency frequency) {
+    switch (frequency) {
+      case Frequency.daily:
+        return 'Daily';
+      case Frequency.weekly:
+        return 'Weekly';
+      case Frequency.oddDays:
+        return 'Odd days';
+      case Frequency.evenDays:
+        return 'Even days';
+    }
+  }
+
+  Future<void> _showFilterSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            void toggleEnvironment(String id) {
+              setSheetState(() {
+                if (!_filterEnvironmentIds.add(id)) {
+                  _filterEnvironmentIds.remove(id);
+                }
+              });
+            }
+
+            void togglePriority(PriorityLevel level) {
+              setSheetState(() {
+                if (!_filterPriorityLevels.add(level)) {
+                  _filterPriorityLevels.remove(level);
+                }
+              });
+            }
+
+            void toggleType(HabitType type) {
+              setSheetState(() {
+                if (!_filterHabitTypes.add(type)) {
+                  _filterHabitTypes.remove(type);
+                }
+              });
+            }
+
+            void toggleFrequency(Frequency frequency) {
+              setSheetState(() {
+                if (!_filterFrequencies.add(frequency)) {
+                  _filterFrequencies.remove(frequency);
+                }
+              });
+            }
+
+            return SafeArea(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.85,
+                ),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Filter Habits',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                          if (_hasActiveFilters)
+                            TextButton(
+                              onPressed: () {
+                                setSheetState(() {
+                                  _filterEnvironmentIds = {};
+                                  _filterPriorityLevels = {};
+                                  _filterHabitTypes = {};
+                                  _filterFrequencies = {};
+                                  _filterImportance = _ImportanceFilter.any;
+                                });
+                              },
+                              child: const Text('Clear all'),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Importance',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          ChoiceChip(
+                            label: const Text('Any'),
+                            selected:
+                                _filterImportance == _ImportanceFilter.any,
+                            onSelected: (_) => setSheetState(
+                              () =>
+                                  _filterImportance = _ImportanceFilter.any,
+                            ),
+                          ),
+                          ChoiceChip(
+                            label: const Text('Important only'),
+                            selected:
+                                _filterImportance ==
+                                _ImportanceFilter.importantOnly,
+                            onSelected: (_) => setSheetState(
+                              () => _filterImportance =
+                                  _ImportanceFilter.importantOnly,
+                            ),
+                          ),
+                          ChoiceChip(
+                            label: const Text('Not important'),
+                            selected:
+                                _filterImportance ==
+                                _ImportanceFilter.notImportant,
+                            onSelected: (_) => setSheetState(
+                              () => _filterImportance =
+                                  _ImportanceFilter.notImportant,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Priority level',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        children: PriorityLevel.values.map((level) {
+                          return FilterChip(
+                            label: Text(_priorityLevelLabel(level)),
+                            selected: _filterPriorityLevels.contains(level),
+                            onSelected: (_) => togglePriority(level),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Type',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        children: HabitType.values.map((type) {
+                          return FilterChip(
+                            label: Text(_habitTypeLabel(type)),
+                            selected: _filterHabitTypes.contains(type),
+                            onSelected: (_) => toggleType(type),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Frequency',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        children: Frequency.values.map((frequency) {
+                          return FilterChip(
+                            label: Text(_frequencyLabel(frequency)),
+                            selected: _filterFrequencies.contains(frequency),
+                            onSelected: (_) => toggleFrequency(frequency),
+                          );
+                        }).toList(),
+                      ),
+                      if (_environments.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          'Environment',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          children: _environments.map((environment) {
+                            return FilterChip(
+                              label: Text(environment.name),
+                              selected: _filterEnvironmentIds.contains(
+                                environment.id,
+                              ),
+                              onSelected: (_) =>
+                                  toggleEnvironment(environment.id),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Map<String, dynamic> _buildHabitsExportPayload() {
@@ -547,6 +870,15 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
         title: const Text('Manage Habits'),
         actions: [
           IconButton(
+            icon: Badge(
+              isLabelVisible: _activeFilterCount > 0,
+              label: Text('$_activeFilterCount'),
+              child: const Icon(Icons.filter_list),
+            ),
+            tooltip: 'Filter habits',
+            onPressed: _showFilterSheet,
+          ),
+          IconButton(
             icon: const Icon(Icons.ios_share),
             tooltip: 'Export Backup',
             onPressed: _showExportActions,
@@ -598,7 +930,8 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
                     ),
                   ),
                 ),
-                if (_searchQuery.trim().isNotEmpty)
+                if (_isSavingOrder) const LinearProgressIndicator(minHeight: 3),
+                if (_isBrowsingFiltered)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Align(
@@ -613,7 +946,7 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
                   ),
                 const SizedBox(height: 8),
                 Expanded(
-                  child: _searchQuery.trim().isEmpty
+                  child: !_isBrowsingFiltered
                       ? ReorderableListView.builder(
                           padding: const EdgeInsets.only(bottom: 16),
                           buildDefaultDragHandles: false,

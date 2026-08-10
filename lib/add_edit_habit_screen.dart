@@ -110,6 +110,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
       _name = '';
       _description = '';
       _importanceScore = 0;
+      _timerMinutes = 30;
       _startDate = _normalizeDate(DateTime.now());
       _endDate = null;
       if (_environments.isNotEmpty) {
