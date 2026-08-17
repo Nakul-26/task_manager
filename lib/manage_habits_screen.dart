@@ -641,6 +641,12 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
     return jsonEncode(_buildHabitsExportPayload());
   }
 
+  String _buildHabitNamesText() {
+    final payload = _buildHabitsExportPayload();
+    final habits = payload['habits'] as List;
+    return habits.map((habit) => (habit as Map)['name'] as String).join('\n');
+  }
+
   String _buildExportFileName() {
     final now = DateTime.now();
     final timestamp =
@@ -651,6 +657,18 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
         '${now.minute.toString().padLeft(2, '0')}'
         '${now.second.toString().padLeft(2, '0')}';
     return 'habits_backup_$timestamp.json';
+  }
+
+  String _buildNamesExportFileName() {
+    final now = DateTime.now();
+    final timestamp =
+        '${now.year.toString().padLeft(4, '0')}_'
+        '${now.month.toString().padLeft(2, '0')}_'
+        '${now.day.toString().padLeft(2, '0')}_'
+        '${now.hour.toString().padLeft(2, '0')}'
+        '${now.minute.toString().padLeft(2, '0')}'
+        '${now.second.toString().padLeft(2, '0')}';
+    return 'habit_names_$timestamp.txt';
   }
 
   Future<Directory> _resolveExportDirectory() async {
@@ -678,6 +696,16 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
     return exportFile;
   }
 
+  Future<File> _writeHabitNamesExportFile() async {
+    final directory = await _resolveExportDirectory();
+    await directory.create(recursive: true);
+    final exportFile = File(
+      '${directory.path}${Platform.pathSeparator}${_buildNamesExportFileName()}',
+    );
+    await exportFile.writeAsString(_buildHabitNamesText());
+    return exportFile;
+  }
+
   Future<void> _exportHabitsToFile() async {
     final exportFile = await _writeHabitsExportFile();
     if (!mounted) {
@@ -686,6 +714,18 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Backup exported to ${exportFile.path}.'),
+      ),
+    );
+  }
+
+  Future<void> _exportHabitNamesToFile() async {
+    final exportFile = await _writeHabitNamesExportFile();
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Habit names exported to ${exportFile.path}.'),
       ),
     );
   }
@@ -736,6 +776,16 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
                       _HabitsExportAction.shareFile,
                     ),
                   ),
+                  ListTile(
+                    leading: const Icon(Icons.short_text),
+                    title: const Text('Export Names Only'),
+                    subtitle: const Text(
+                      'Save a plain text list of habit names, nothing else',
+                    ),
+                    onTap: () => Navigator.of(sheetContext).pop(
+                      _HabitsExportAction.exportNamesOnly,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -750,6 +800,9 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
         break;
       case _HabitsExportAction.shareFile:
         await _shareHabitsExport();
+        break;
+      case _HabitsExportAction.exportNamesOnly:
+        await _exportHabitNamesToFile();
         break;
       case null:
         break;
@@ -1035,7 +1088,7 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
   }
 }
 
-enum _HabitsExportAction { exportFile, shareFile }
+enum _HabitsExportAction { exportFile, shareFile, exportNamesOnly }
 
 class _OrderBadge extends StatelessWidget {
   final int number;

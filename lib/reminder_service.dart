@@ -367,4 +367,90 @@ class ReminderService {
     }
     return hash;
   }
+
+  int _taskNotificationId(String taskId) {
+    return _stableHash('task:$taskId') % 2000000000;
+  }
+
+  int _reminderNotificationId(String reminderId) {
+    return _stableHash('reminder:$reminderId') % 2000000000;
+  }
+
+  Future<void> syncTaskReminder(OneTimeTask task) async {
+    if (_isTestEnvironment) {
+      return;
+    }
+    await initialize();
+    await cancelTaskReminder(task.id);
+
+    if (!task.reminderEnabled ||
+        task.isDone ||
+        task.dueDate == null ||
+        task.reminderHour == null ||
+        task.reminderMinute == null) {
+      return;
+    }
+
+    final when = tz.TZDateTime(
+      tz.local,
+      task.dueDate!.year,
+      task.dueDate!.month,
+      task.dueDate!.day,
+      task.reminderHour!,
+      task.reminderMinute!,
+    );
+    if (!when.isAfter(tz.TZDateTime.now(tz.local))) {
+      return;
+    }
+    await _notifications.zonedSchedule(
+      _taskNotificationId(task.id),
+      task.name,
+      'Task due: ${task.name}',
+      when,
+      _details(),
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+    );
+  }
+
+  Future<void> cancelTaskReminder(String taskId) async {
+    if (_isTestEnvironment) {
+      return;
+    }
+    await _notifications.cancel(_taskNotificationId(taskId));
+  }
+
+  Future<void> syncReminder(Reminder reminder) async {
+    if (_isTestEnvironment) {
+      return;
+    }
+    await initialize();
+    await cancelReminder(reminder.id);
+
+    if (!reminder.isActive || reminder.isCompleted) {
+      return;
+    }
+    final when = tz.TZDateTime.from(reminder.dateTime, tz.local);
+    if (!when.isAfter(tz.TZDateTime.now(tz.local))) {
+      return;
+    }
+    await _notifications.zonedSchedule(
+      _reminderNotificationId(reminder.id),
+      reminder.title,
+      reminder.note.isEmpty ? 'Reminder' : reminder.note,
+      when,
+      _details(),
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+    );
+  }
+
+  Future<void> cancelReminder(String reminderId) async {
+    if (_isTestEnvironment) {
+      return;
+    }
+    await _notifications.cancel(_reminderNotificationId(reminderId));
+  }
 }

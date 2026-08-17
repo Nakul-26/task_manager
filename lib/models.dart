@@ -771,3 +771,168 @@ class DailyLog {
     );
   }
 }
+
+class OneTimeTask {
+  late String id;
+  late String name;
+  late String description;
+  late DateTime? dueDate;
+  late PriorityLevel priorityLevel;
+  late List<String> environmentIds;
+  late bool isDone;
+  late DateTime? completedAt;
+  late bool reminderEnabled;
+  late int? reminderHour;
+  late int? reminderMinute;
+  late DateTime createdAt;
+  late int sortOrder;
+
+  OneTimeTask({
+    required this.id,
+    required this.name,
+    this.description = '',
+    this.dueDate,
+    this.priorityLevel = PriorityLevel.core,
+    List<String>? environmentIds,
+    this.isDone = false,
+    this.completedAt,
+    this.reminderEnabled = false,
+    this.reminderHour,
+    this.reminderMinute,
+    required this.createdAt,
+    this.sortOrder = -1,
+  }) : environmentIds = environmentIds ?? [];
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'name': name,
+      'description': description,
+      'dueDate': dueDate?.toIso8601String(),
+      'priorityLevel': priorityLevel.index,
+      'environmentIds': environmentIds,
+      'isDone': isDone,
+      'completedAt': completedAt?.toIso8601String(),
+      'reminderEnabled': reminderEnabled,
+      'reminderHour': reminderHour,
+      'reminderMinute': reminderMinute,
+      'createdAt': createdAt.toIso8601String(),
+      'sortOrder': sortOrder,
+    };
+  }
+
+  factory OneTimeTask.fromMap(Map<String, dynamic> map) {
+    return OneTimeTask(
+      id: map['id'],
+      name: map['name'],
+      description: map['description'] ?? '',
+      dueDate: map['dueDate'] != null ? DateTime.parse(map['dueDate']) : null,
+      priorityLevel: _parsePriorityLevelValue(map['priorityLevel']),
+      environmentIds: map['environmentIds'] != null
+          ? List<String>.from(map['environmentIds'])
+          : [],
+      isDone: map['isDone'] ?? false,
+      completedAt: map['completedAt'] != null
+          ? DateTime.parse(map['completedAt'])
+          : null,
+      reminderEnabled: map['reminderEnabled'] ?? false,
+      reminderHour: map['reminderHour'],
+      reminderMinute: map['reminderMinute'],
+      createdAt: DateTime.parse(map['createdAt']),
+      sortOrder: map['sortOrder'] ?? -1,
+    );
+  }
+}
+
+class Reminder {
+  late String id;
+  late String title;
+  late String note;
+  late DateTime dateTime;
+  late bool isActive;
+  late bool isCompleted;
+  late DateTime createdAt;
+
+  Reminder({
+    required this.id,
+    required this.title,
+    this.note = '',
+    required this.dateTime,
+    this.isActive = true,
+    this.isCompleted = false,
+    required this.createdAt,
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'title': title,
+      'note': note,
+      'dateTime': dateTime.toIso8601String(),
+      'isActive': isActive,
+      'isCompleted': isCompleted,
+      'createdAt': createdAt.toIso8601String(),
+    };
+  }
+
+  factory Reminder.fromMap(Map<String, dynamic> map) {
+    return Reminder(
+      id: map['id'],
+      title: map['title'],
+      note: map['note'] ?? '',
+      dateTime: DateTime.parse(map['dateTime']),
+      isActive: map['isActive'] ?? true,
+      isCompleted: map['isCompleted'] ?? false,
+      createdAt: DateTime.parse(map['createdAt']),
+    );
+  }
+}
+
+class Note {
+  late String id;
+  late String title;
+  late String body;
+  late bool pinned;
+  late DateTime createdAt;
+  late DateTime updatedAt;
+
+  Note({
+    required this.id,
+    this.title = '',
+    this.body = '',
+    this.pinned = false,
+    required this.createdAt,
+    DateTime? updatedAt,
+  }) : updatedAt = updatedAt ?? createdAt;
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'title': title,
+      'body': body,
+      'pinned': pinned,
+      'createdAt': createdAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
+    };
+  }
+
+  factory Note.fromMap(Map<String, dynamic> map) {
+    return Note(
+      id: map['id'],
+      title: map['title'] ?? '',
+      body: map['body'] ?? '',
+      pinned: map['pinned'] ?? false,
+      createdAt: DateTime.parse(map['createdAt']),
+      updatedAt: map['updatedAt'] != null
+          ? DateTime.parse(map['updatedAt'])
+          : DateTime.parse(map['createdAt']),
+    );
+  }
+}
+
+PriorityLevel _parsePriorityLevelValue(dynamic value) {
+  if (value is int && value >= 0 && value < PriorityLevel.values.length) {
+    return PriorityLevel.values[value];
+  }
+  return PriorityLevel.core;
+}

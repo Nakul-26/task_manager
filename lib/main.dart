@@ -1,7 +1,7 @@
 import 'package:habit_tracker/box_names.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
-import 'package:habit_tracker/today_screen.dart';
+import 'package:habit_tracker/home_shell.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 class AppScrollBehavior extends MaterialScrollBehavior {
@@ -22,6 +22,9 @@ void main() async {
     Hive.openBox(HiveBoxNames.habits),
     Hive.openBox(HiveBoxNames.dailyLogs),
     Hive.openBox(HiveBoxNames.appSettings),
+    Hive.openBox(HiveBoxNames.oneTimeTasks),
+    Hive.openBox(HiveBoxNames.reminders),
+    Hive.openBox(HiveBoxNames.notes),
   ]);
 
   runApp(const MyApp());
@@ -39,7 +42,7 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.blue,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: const TodayScreen(),
+      home: const HomeShell(),
     );
   }
 }
