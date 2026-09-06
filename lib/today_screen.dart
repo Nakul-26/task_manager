@@ -6,20 +6,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/utils/debounced_callback.dart';
-import 'package:habit_tracker/history_screen.dart';
 import 'package:habit_tracker/habit_details_screen.dart';
-import 'package:habit_tracker/manage_habits_screen.dart';
-import 'package:habit_tracker/manage_environments_screen.dart';
 import 'package:habit_tracker/models.dart';
-import 'package:habit_tracker/paused_sessions_screen.dart';
 import 'package:habit_tracker/reminder_service.dart';
 import 'package:habit_tracker/utils/execution_environment_utils.dart';
 import 'package:habit_tracker/utils/habit_quality_utils.dart';
 import 'package:habit_tracker/utils/habit_schedule_utils.dart'
     as schedule_utils;
 import 'package:habit_tracker/utils/habit_visibility_utils.dart';
+import 'package:habit_tracker/utils/item_move.dart';
 import 'package:habit_tracker/utils/pause_utils.dart';
-import 'package:habit_tracker/weekly_time_screen.dart';
+import 'package:habit_tracker/widgets/type_app_bar.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -28,15 +25,7 @@ const String _priorityEmergencyUnlockKey = 'priorityEmergencyUnlockDate';
 const double _priorityUnlockThreshold = 0.75;
 const int _xpPerLevel = 100;
 
-enum _TodayMenuAction {
-  exportTodayList,
-  pauseTracking,
-  pausedSessions,
-  history,
-  weeklyTime,
-  manageHabits,
-  manageEnvironments,
-}
+enum _TodayMenuAction { exportTodayList, pauseTracking }
 
 class TodayScreen extends StatefulWidget {
   const TodayScreen({super.key});
@@ -365,23 +354,6 @@ class _TodayScreenState extends State<TodayScreen> {
     }
   }
 
-  void _manageHabits() {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (context) => const ManageHabitsScreen()));
-  }
-
-  Future<void> _openEnvironmentManager() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => const ManageEnvironmentsScreen()),
-    );
-    if (!mounted) {
-      return;
-    }
-    _loadEnvironmentSettings();
-    await _loadHabits();
-  }
-
   Future<void> _openTodayExportMenu() async {
     final action = await showModalBottomSheet<_TodayExportAction>(
       context: context,
@@ -505,24 +477,6 @@ class _TodayScreenState extends State<TodayScreen> {
         title: "Today's habits",
         subject: "Today's habits",
       ),
-    );
-  }
-
-  void _openHistory() {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (context) => const HistoryScreen()));
-  }
-
-  void _openWeeklyTime() {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (context) => const WeeklyTimeScreen()));
-  }
-
-  void _openPausedSessions() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => const PausedSessionsScreen()),
     );
   }
 
@@ -1174,8 +1128,9 @@ class _TodayScreenState extends State<TodayScreen> {
     final priorityStats = _buildPriorityStats(priorityGroups);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Today'),
+      appBar: TypeAppBar(
+        title: 'Today',
+        hint: ItemKind.habit.hint,
         actions: [
           PopupMenuButton<_TodayMenuAction>(
             tooltip: 'More',
@@ -1186,21 +1141,6 @@ class _TodayScreenState extends State<TodayScreen> {
                   break;
                 case _TodayMenuAction.pauseTracking:
                   _openPauseDialog();
-                  break;
-                case _TodayMenuAction.pausedSessions:
-                  _openPausedSessions();
-                  break;
-                case _TodayMenuAction.history:
-                  _openHistory();
-                  break;
-                case _TodayMenuAction.weeklyTime:
-                  _openWeeklyTime();
-                  break;
-                case _TodayMenuAction.manageHabits:
-                  _manageHabits();
-                  break;
-                case _TodayMenuAction.manageEnvironments:
-                  _openEnvironmentManager();
                   break;
               }
             },
@@ -1227,56 +1167,6 @@ class _TodayScreenState extends State<TodayScreen> {
                     ),
                     const SizedBox(width: 12),
                     Text(isTodayPaused ? 'Resume tracking' : 'Pause tracking'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: _TodayMenuAction.pausedSessions,
-                child: Row(
-                  children: [
-                    Icon(Icons.event_busy, size: 20),
-                    SizedBox(width: 12),
-                    Text('Paused sessions'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: _TodayMenuAction.history,
-                child: Row(
-                  children: [
-                    Icon(Icons.history, size: 20),
-                    SizedBox(width: 12),
-                    Text('History'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: _TodayMenuAction.weeklyTime,
-                child: Row(
-                  children: [
-                    Icon(Icons.timer_outlined, size: 20),
-                    SizedBox(width: 12),
-                    Text('Weekly time budget'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: _TodayMenuAction.manageHabits,
-                child: Row(
-                  children: [
-                    Icon(Icons.settings, size: 20),
-                    SizedBox(width: 12),
-                    Text('Manage habits'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: _TodayMenuAction.manageEnvironments,
-                child: Row(
-                  children: [
-                    Icon(Icons.public, size: 20),
-                    SizedBox(width: 12),
-                    Text('Manage environments'),
                   ],
                 ),
               ),
@@ -2198,10 +2088,7 @@ class _TodayScreenState extends State<TodayScreen> {
     bool isTodayPaused, {
     bool isCompleted = false,
   }) {
-    final averageQualityValue = _cachedAverageQualities[habit.id];
-    final qualityTrend = _cachedQualityTrends[habit.id] ?? HabitQualityTrend.insufficientData;
     final streak = _cachedStreaks[habit.id] ?? 0;
-    final successRate = _cachedSuccessRates[habit.id] ?? 0.0;
 
     final isHabitPausedToday = isTodayPaused || isPausedOnDate(habit.pausePeriods, _normalizeDate(DateTime.now()));
 
@@ -2282,22 +2169,12 @@ class _TodayScreenState extends State<TodayScreen> {
                             icon: Icons.local_fire_department,
                             label: '$streak',
                           ),
-                          _buildIconChip(
-                            icon: Icons.check_circle_outline,
-                            label: '${successRate.toStringAsFixed(0)}%',
-                          ),
-                          if (averageQualityValue != null)
-                            _buildIconChip(
-                              icon: Icons.star,
-                              label:
-                                  '${qualityScoreLabel(averageQualityValue)} (${averageQualityValue.toStringAsFixed(1)}/4)',
-                            ),
-                          if (qualityTrend != HabitQualityTrend.insufficientData)
-                            _buildIconChip(
-                              icon: _qualityTrendIcon(qualityTrend),
-                              label: qualityTrendLabel(qualityTrend),
-                              color: qualityTrendColor(qualityTrend),
-                            ),
+                          // Success rate / average quality / quality trend
+                          // are deliberately left off this card — they're
+                          // retrospective stats, not "do this now" info, and
+                          // duplicate what Habit Details already shows one
+                          // tap away. Keeping them off here leaves room for
+                          // the checkbox to actually stand out.
                           if (log.completed && log.quality != null)
                             _buildIconChip(
                               icon: Icons.done_all,
@@ -2377,18 +2254,6 @@ class _TodayScreenState extends State<TodayScreen> {
         ),
       ),
     );
-  }
-
-  IconData _qualityTrendIcon(HabitQualityTrend trend) {
-    switch (trend) {
-      case HabitQualityTrend.improving:
-        return Icons.trending_up;
-      case HabitQualityTrend.declining:
-        return Icons.trending_down;
-      case HabitQualityTrend.stable:
-      case HabitQualityTrend.insufficientData:
-        return Icons.trending_flat;
-    }
   }
 
   Widget _buildIconChip({

@@ -48,6 +48,11 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
   TimeOfDay? _visibleAfterTime;
   late DateTime _startDate;
   DateTime? _endDate;
+  // New habits start with the advanced sections collapsed so creating one
+  // is as light as adding a Task — name, description, color, save. Editing
+  // an existing habit opens with everything visible since you're already
+  // configuring it in detail.
+  late bool _showAdvanced;
 
   String _frequencyLabel(Frequency frequency) {
     switch (frequency) {
@@ -67,6 +72,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
     super.initState();
     _settingsBox = Hive.box(HiveBoxNames.appSettings);
     _environments = loadExecutionEnvironments(_settingsBox);
+    _showAdvanced = widget.habit != null;
     if (widget.habit != null) {
       _name = widget.habit!.name;
       _description = widget.habit!.description;
@@ -547,6 +553,51 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                     ),
                   ],
                 ),
+                Card(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () {
+                      setState(() {
+                        _showAdvanced = !_showAdvanced;
+                      });
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.tune,
+                            size: 20,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _showAdvanced
+                                  ? 'Hide priority, schedule & reminders'
+                                  : 'Priority, schedule & reminders (optional)',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                          Icon(
+                            _showAdvanced
+                                ? Icons.expand_less
+                                : Icons.expand_more,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                if (_showAdvanced) ...[
                 _buildSectionCard(
                   title: 'Priority & Context',
                   icon: Icons.flag_outlined,
@@ -879,6 +930,7 @@ class _AddEditHabitScreenState extends State<AddEditHabitScreen> {
                     ),
                   ],
                 ),
+                ],
                 const SizedBox(height: 8),
                 FilledButton.icon(
                   onPressed: _saveHabit,

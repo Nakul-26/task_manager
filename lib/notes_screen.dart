@@ -2,6 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/note_editor_screen.dart';
+import 'package:habit_tracker/utils/delete_feedback.dart';
+import 'package:habit_tracker/utils/item_move.dart';
+import 'package:habit_tracker/widgets/list_section_header.dart';
+import 'package:habit_tracker/widgets/move_hint_banner.dart';
+import 'package:habit_tracker/widgets/move_or_delete_dismissible.dart';
+import 'package:habit_tracker/widgets/type_app_bar.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 class NotesScreen extends StatefulWidget {
@@ -13,11 +19,24 @@ class NotesScreen extends StatefulWidget {
 
 class _NotesScreenState extends State<NotesScreen> {
   late Box<dynamic> _noteBox;
+  late Box<dynamic> _settingsBox;
+  late bool _showMoveHint;
 
   @override
   void initState() {
     super.initState();
     _noteBox = Hive.box(HiveBoxNames.notes);
+    _settingsBox = Hive.box(HiveBoxNames.appSettings);
+    _showMoveHint = !hasSeenMoveHint(_settingsBox);
+  }
+
+  Future<void> _dismissMoveHint() async {
+    await markMoveHintSeen(_settingsBox);
+    if (mounted) {
+      setState(() {
+        _showMoveHint = false;
+      });
+    }
   }
 
   List<Note> _loadNotes() {
@@ -43,8 +62,17 @@ class _NotesScreenState extends State<NotesScreen> {
   }
 
   Future<void> _deleteNote(Note note) async {
+    final removedMap = Map<String, dynamic>.from(note.toMap());
     await _noteBox.delete(note.id);
+    if (!mounted) {
+      return;
+    }
     setState(() {});
+    showUndoSnackBar(
+      context,
+      message: 'Deleted "${note.title.isEmpty ? 'Untitled' : note.title}"',
+      onUndo: () => _noteBox.put(note.id, removedMap),
+    );
   }
 
   String _preview(Note note) {
@@ -57,57 +85,86 @@ class _NotesScreenState extends State<NotesScreen> {
         : singleLine;
   }
 
+  Widget _buildNoteTile(Note note) {
+    return MoveOrDeleteDismissible(
+      itemKey: ValueKey(note.id),
+      onConfirmDelete: () => confirmDelete(
+        context,
+        itemTypeLabel: 'note',
+        itemName: note.title.isEmpty ? 'Untitled' : note.title,
+      ),
+      onDelete: () => _deleteNote(note),
+      onMove: () => showMoveToSheet(
+        context: context,
+        sourceKind: ItemKind.note,
+        sourceItem: note,
+      ),
+      child: ListTile(
+        leading: Icon(
+          note.pinned ? Icons.push_pin : Icons.sticky_note_2_outlined,
+          color: Colors.amber[800],
+        ),
+        title: Text(
+          note.title.isEmpty ? 'Untitled' : note.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          _preview(note),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        onTap: () => _openNote(note),
+        onLongPress: () => showMoveToSheet(
+          context: context,
+          sourceKind: ItemKind.note,
+          sourceItem: note,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder(
       valueListenable: _noteBox.listenable(),
       builder: (context, Box<dynamic> box, _) {
         final notes = _loadNotes();
+        final pinned = notes.where((n) => n.pinned).toList();
+        final others = notes.where((n) => !n.pinned).toList();
         return Scaffold(
-          appBar: AppBar(title: const Text('Notes')),
-          body: notes.isEmpty
-              ? const Center(child: Text('No notes yet. Tap + to add one.'))
-              : ListView.builder(
-                  itemCount: notes.length,
-                  itemBuilder: (context, index) {
-                    final note = notes[index];
-                    return Dismissible(
-                      key: ValueKey(note.id),
-                      background: Container(
-                        color: Colors.red,
-                        alignment: Alignment.centerLeft,
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: const Icon(Icons.delete, color: Colors.white),
+          appBar: TypeAppBar(title: 'Notes', hint: ItemKind.note.hint),
+          body: Column(
+            children: [
+              if (_showMoveHint && notes.isNotEmpty)
+                MoveHintBanner(onDismiss: _dismissMoveHint),
+              Expanded(
+                child: notes.isEmpty
+                    ? const Center(
+                        child: Text('No notes yet. Tap + to add one.'),
+                      )
+                    : ListView(
+                        children: [
+                          if (pinned.isNotEmpty) ...[
+                            ListSectionHeader(
+                              label: 'Pinned',
+                              count: pinned.length,
+                            ),
+                            for (final note in pinned) _buildNoteTile(note),
+                          ],
+                          if (others.isNotEmpty) ...[
+                            if (pinned.isNotEmpty)
+                              ListSectionHeader(
+                                label: 'Others',
+                                count: others.length,
+                              ),
+                            for (final note in others) _buildNoteTile(note),
+                          ],
+                        ],
                       ),
-                      secondaryBackground: Container(
-                        color: Colors.red,
-                        alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: const Icon(Icons.delete, color: Colors.white),
-                      ),
-                      onDismissed: (_) => _deleteNote(note),
-                      child: ListTile(
-                        leading: Icon(
-                          note.pinned
-                              ? Icons.push_pin
-                              : Icons.sticky_note_2_outlined,
-                          color: Colors.amber[800],
-                        ),
-                        title: Text(
-                          note.title.isEmpty ? 'Untitled' : note.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          _preview(note),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        onTap: () => _openNote(note),
-                      ),
-                    );
-                  },
-                ),
+              ),
+            ],
+          ),
           floatingActionButton: FloatingActionButton(
             onPressed: () => _openNote(),
             backgroundColor: Colors.amber[800],

@@ -2,6 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/reminder_service.dart';
+import 'package:habit_tracker/utils/delete_feedback.dart';
+import 'package:habit_tracker/utils/item_move.dart';
+import 'package:habit_tracker/widgets/list_section_header.dart';
+import 'package:habit_tracker/widgets/move_hint_banner.dart';
+import 'package:habit_tracker/widgets/move_or_delete_dismissible.dart';
+import 'package:habit_tracker/widgets/type_app_bar.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -14,11 +20,24 @@ class RemindersScreen extends StatefulWidget {
 
 class _RemindersScreenState extends State<RemindersScreen> {
   late Box<dynamic> _reminderBox;
+  late Box<dynamic> _settingsBox;
+  late bool _showMoveHint;
 
   @override
   void initState() {
     super.initState();
     _reminderBox = Hive.box(HiveBoxNames.reminders);
+    _settingsBox = Hive.box(HiveBoxNames.appSettings);
+    _showMoveHint = !hasSeenMoveHint(_settingsBox);
+  }
+
+  Future<void> _dismissMoveHint() async {
+    await markMoveHintSeen(_settingsBox);
+    if (mounted) {
+      setState(() {
+        _showMoveHint = false;
+      });
+    }
   }
 
   List<Reminder> _loadReminders() {
@@ -35,9 +54,23 @@ class _RemindersScreenState extends State<RemindersScreen> {
   }
 
   Future<void> _deleteReminder(Reminder reminder) async {
+    final removedMap = Map<String, dynamic>.from(reminder.toMap());
     await _reminderBox.delete(reminder.id);
     await ReminderService.instance.cancelReminder(reminder.id);
+    if (!mounted) {
+      return;
+    }
     setState(() {});
+    showUndoSnackBar(
+      context,
+      message: 'Deleted "${reminder.title}"',
+      onUndo: () async {
+        await _reminderBox.put(reminder.id, removedMap);
+        await ReminderService.instance.syncReminder(
+          Reminder.fromMap(removedMap),
+        );
+      },
+    );
   }
 
   Future<void> _openReminderSheet([Reminder? reminder]) async {
@@ -186,21 +219,19 @@ class _RemindersScreenState extends State<RemindersScreen> {
   }
 
   Widget _buildReminderTile(Reminder reminder) {
-    return Dismissible(
-      key: ValueKey(reminder.id),
-      background: Container(
-        color: Colors.red,
-        alignment: Alignment.centerLeft,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: const Icon(Icons.delete, color: Colors.white),
+    return MoveOrDeleteDismissible(
+      itemKey: ValueKey(reminder.id),
+      onConfirmDelete: () => confirmDelete(
+        context,
+        itemTypeLabel: 'reminder',
+        itemName: reminder.title,
       ),
-      secondaryBackground: Container(
-        color: Colors.red,
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: const Icon(Icons.delete, color: Colors.white),
+      onDelete: () => _deleteReminder(reminder),
+      onMove: () => showMoveToSheet(
+        context: context,
+        sourceKind: ItemKind.reminder,
+        sourceItem: reminder,
       ),
-      onDismissed: (_) => _deleteReminder(reminder),
       child: ListTile(
         leading: Checkbox(
           value: reminder.isCompleted,
@@ -219,6 +250,11 @@ class _RemindersScreenState extends State<RemindersScreen> {
         ),
         trailing: const Icon(Icons.notifications, color: Colors.purple),
         onTap: () => _openReminderSheet(reminder),
+        onLongPress: () => showMoveToSheet(
+          context: context,
+          sourceKind: ItemKind.reminder,
+          sourceItem: reminder,
+        ),
       ),
     );
   }
@@ -235,43 +271,39 @@ class _RemindersScreenState extends State<RemindersScreen> {
           ..sort((a, b) => b.dateTime.compareTo(a.dateTime));
 
         return Scaffold(
-          appBar: AppBar(title: const Text('Reminders')),
-          body: reminders.isEmpty
-              ? const Center(
-                  child: Text('No reminders yet. Tap + to add one.'),
-                )
-              : ListView(
-                  children: [
-                    if (upcoming.isNotEmpty) ...[
-                      const Padding(
-                        padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
-                        child: Text(
-                          'Upcoming',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        ),
+          appBar: TypeAppBar(title: 'Reminders', hint: ItemKind.reminder.hint),
+          body: Column(
+            children: [
+              if (_showMoveHint && reminders.isNotEmpty)
+                MoveHintBanner(onDismiss: _dismissMoveHint),
+              Expanded(
+                child: reminders.isEmpty
+                    ? const Center(
+                        child: Text('No reminders yet. Tap + to add one.'),
+                      )
+                    : ListView(
+                        children: [
+                          if (upcoming.isNotEmpty) ...[
+                            ListSectionHeader(
+                              label: 'Upcoming',
+                              count: upcoming.length,
+                            ),
+                            for (final reminder in upcoming)
+                              _buildReminderTile(reminder),
+                          ],
+                          if (completed.isNotEmpty) ...[
+                            ListSectionHeader(
+                              label: 'Completed',
+                              count: completed.length,
+                            ),
+                            for (final reminder in completed)
+                              _buildReminderTile(reminder),
+                          ],
+                        ],
                       ),
-                      for (final reminder in upcoming)
-                        _buildReminderTile(reminder),
-                    ],
-                    if (completed.isNotEmpty) ...[
-                      const Padding(
-                        padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
-                        child: Text(
-                          'Completed',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                      for (final reminder in completed)
-                        _buildReminderTile(reminder),
-                    ],
-                  ],
-                ),
+              ),
+            ],
+          ),
           floatingActionButton: FloatingActionButton(
             onPressed: () => _openReminderSheet(),
             backgroundColor: Colors.purple,

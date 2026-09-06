@@ -3,6 +3,12 @@ import 'package:habit_tracker/add_edit_task_screen.dart';
 import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/reminder_service.dart';
+import 'package:habit_tracker/utils/delete_feedback.dart';
+import 'package:habit_tracker/utils/item_move.dart';
+import 'package:habit_tracker/widgets/list_section_header.dart';
+import 'package:habit_tracker/widgets/move_hint_banner.dart';
+import 'package:habit_tracker/widgets/move_or_delete_dismissible.dart';
+import 'package:habit_tracker/widgets/type_app_bar.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 class TasksScreen extends StatefulWidget {
@@ -14,11 +20,24 @@ class TasksScreen extends StatefulWidget {
 
 class _TasksScreenState extends State<TasksScreen> {
   late Box<dynamic> _taskBox;
+  late Box<dynamic> _settingsBox;
+  late bool _showMoveHint;
 
   @override
   void initState() {
     super.initState();
     _taskBox = Hive.box(HiveBoxNames.oneTimeTasks);
+    _settingsBox = Hive.box(HiveBoxNames.appSettings);
+    _showMoveHint = !hasSeenMoveHint(_settingsBox);
+  }
+
+  Future<void> _dismissMoveHint() async {
+    await markMoveHintSeen(_settingsBox);
+    if (mounted) {
+      setState(() {
+        _showMoveHint = false;
+      });
+    }
   }
 
   List<OneTimeTask> _loadTasks() {
@@ -49,9 +68,23 @@ class _TasksScreenState extends State<TasksScreen> {
   }
 
   Future<void> _deleteTask(OneTimeTask task) async {
+    final removedMap = Map<String, dynamic>.from(task.toMap());
     await _taskBox.delete(task.id);
     await ReminderService.instance.cancelTaskReminder(task.id);
+    if (!mounted) {
+      return;
+    }
     setState(() {});
+    showUndoSnackBar(
+      context,
+      message: 'Deleted "${task.name}"',
+      onUndo: () async {
+        await _taskBox.put(task.id, removedMap);
+        await ReminderService.instance.syncTaskReminder(
+          OneTimeTask.fromMap(removedMap),
+        );
+      },
+    );
   }
 
   Future<void> _openTask([OneTimeTask? task]) async {
@@ -68,21 +101,16 @@ class _TasksScreenState extends State<TasksScreen> {
   }
 
   Widget _buildTaskTile(OneTimeTask task) {
-    return Dismissible(
-      key: ValueKey(task.id),
-      background: Container(
-        color: Colors.red,
-        alignment: Alignment.centerLeft,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: const Icon(Icons.delete, color: Colors.white),
+    return MoveOrDeleteDismissible(
+      itemKey: ValueKey(task.id),
+      onConfirmDelete: () =>
+          confirmDelete(context, itemTypeLabel: 'task', itemName: task.name),
+      onDelete: () => _deleteTask(task),
+      onMove: () => showMoveToSheet(
+        context: context,
+        sourceKind: ItemKind.task,
+        sourceItem: task,
       ),
-      secondaryBackground: Container(
-        color: Colors.red,
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: const Icon(Icons.delete, color: Colors.white),
-      ),
-      onDismissed: (_) => _deleteTask(task),
       child: ListTile(
         leading: Checkbox(
           value: task.isDone,
@@ -103,6 +131,11 @@ class _TasksScreenState extends State<TasksScreen> {
           color: task.priorityLevel.accentColor,
         ),
         onTap: () => _openTask(task),
+        onLongPress: () => showMoveToSheet(
+          context: context,
+          sourceKind: ItemKind.task,
+          sourceItem: task,
+        ),
       ),
     );
   }
@@ -159,26 +192,31 @@ class _TasksScreenState extends State<TasksScreen> {
         ].where((entry) => entry.value.isNotEmpty).toList();
 
         return Scaffold(
-          appBar: AppBar(title: const Text('Tasks')),
-          body: sections.isEmpty
-              ? const Center(child: Text('No tasks yet. Tap + to add one.'))
-              : ListView(
-                  children: [
-                    for (final section in sections) ...[
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-                        child: Text(
-                          '${section.key} (${section.value.length})',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        ),
+          appBar: TypeAppBar(title: 'Tasks', hint: ItemKind.task.hint),
+          body: Column(
+            children: [
+              if (_showMoveHint && sections.isNotEmpty)
+                MoveHintBanner(onDismiss: _dismissMoveHint),
+              Expanded(
+                child: sections.isEmpty
+                    ? const Center(
+                        child: Text('No tasks yet. Tap + to add one.'),
+                      )
+                    : ListView(
+                        children: [
+                          for (final section in sections) ...[
+                            ListSectionHeader(
+                              label: section.key,
+                              count: section.value.length,
+                            ),
+                            for (final task in section.value)
+                              _buildTaskTile(task),
+                          ],
+                        ],
                       ),
-                      for (final task in section.value) _buildTaskTile(task),
-                    ],
-                  ],
-                ),
+              ),
+            ],
+          ),
           floatingActionButton: FloatingActionButton(
             onPressed: () => _openTask(),
             backgroundColor: Colors.green,

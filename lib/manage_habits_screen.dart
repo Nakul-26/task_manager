@@ -9,7 +9,9 @@ import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/reminder_service.dart';
 import 'package:habit_tracker/utils/debounced_callback.dart';
+import 'package:habit_tracker/utils/delete_feedback.dart';
 import 'package:habit_tracker/utils/execution_environment_utils.dart';
+import 'package:habit_tracker/utils/item_move.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -347,12 +349,26 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
           ),
           TextButton(
             onPressed: () async {
+              final removedMap = Map<String, dynamic>.from(habit.toMap());
               await _habitBox.delete(habit.id);
               await ReminderService.instance.cancelHabitReminders(habit.id);
               if (!context.mounted) {
                 return;
               }
               Navigator.of(context).pop();
+              if (!mounted) {
+                return;
+              }
+              showUndoSnackBar(
+                this.context,
+                message: 'Deleted "${habit.name}"',
+                onUndo: () async {
+                  await _habitBox.put(habit.id, removedMap);
+                  await ReminderService.instance.syncHabitReminder(
+                    Habit.fromMap(removedMap),
+                  );
+                },
+              );
             },
             child: const Text('Delete'),
           ),
@@ -897,6 +913,19 @@ class _ManageHabitsScreenState extends State<ManageHabitsScreen> {
                     onTap: () async {
                       Navigator.of(context).pop();
                       await _setArchiveStatus(habit, true);
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.swap_horiz),
+                    title: const Text('Move to...'),
+                    subtitle: const Text('Turn into a task, reminder, or note'),
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      showMoveToSheet(
+                        context: this.context,
+                        sourceKind: ItemKind.habit,
+                        sourceItem: habit,
+                      );
                     },
                   ),
                   ListTile(

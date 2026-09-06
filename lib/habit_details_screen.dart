@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:habit_tracker/add_edit_habit_screen.dart';
 import 'package:habit_tracker/box_names.dart';
 import 'package:habit_tracker/models.dart';
 import 'package:habit_tracker/reminder_service.dart';
@@ -46,6 +47,23 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
     _settingsBox = Hive.box(HiveBoxNames.appSettings);
     _habitBox = Hive.box(HiveBoxNames.habits);
     _loadLogs();
+  }
+
+  // AddEditHabitScreen writes a fresh Habit object to Hive rather than
+  // mutating widget.habit in place, so this screen's copy of the habit
+  // would otherwise go stale after a save (or vanish after a delete).
+  // Simplest correct fix: pop back to whichever list pushed us here once
+  // editing is done, so it can reload and show the current data.
+  Future<void> _editHabit() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => AddEditHabitScreen(habit: widget.habit),
+      ),
+    );
+    if (!mounted) {
+      return;
+    }
+    Navigator.of(context).pop();
   }
 
   DateTime _normalizeDate(DateTime date) {
@@ -329,6 +347,13 @@ class _HabitDetailsScreenState extends State<HabitDetailsScreen> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit),
+            tooltip: 'Edit habit',
+            onPressed: _editHabit,
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16.0),
